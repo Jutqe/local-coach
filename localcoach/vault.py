@@ -11,6 +11,7 @@ from pathlib import Path
 from . import guard
 from .config import Config, DEFAULT_VAULT_CANDIDATES, EXCLUDED_DIRS, LIFE_RESET_DIR
 from .util import common_date, find_date, heading_year, sha256_text, title_year, warn
+from .i18n import trl
 
 
 @dataclass
@@ -51,9 +52,9 @@ def find_vault(cli_value: str | None) -> Path:
     for c in candidates:
         if c.is_dir() and next(c.rglob("*.md"), None) is not None:
             return c.resolve()
-    raise FileNotFoundError("Не найдена папка vault с Markdown-файлами. Проверены:\n"
+    raise FileNotFoundError(trl("Не найдена папка vault с Markdown-файлами. Проверены:\n")
                             + "\n".join(f"  - {c}" for c in candidates)
-                            + "\nУкажи путь: --vault /путь/к/vault")
+                            + trl("\nУкажи путь: --vault /путь/к/vault"))
 
 
 def walk_markdown(vault: Path) -> list[Path]:
@@ -260,7 +261,7 @@ def read_note(vault: Path, file_path: Path, cfg: Config, imported: bool = False)
         stat = file_path.stat()
         raw = file_path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
-        warn(f"не удалось прочитать {file_path.name}: {exc.strerror}")
+        warn(trl("не удалось прочитать {0}: {1}", file_path.name, exc.strerror))
         return None
     rel = (IMPORT_PREFIX if imported else "") + file_path.relative_to(vault).as_posix()
     title = file_path.stem
@@ -301,8 +302,7 @@ def scan(vault: Path, cfg: Config) -> list[Note]:
     if len(mtime_days) >= 20:
         top = max(set(mtime_days), key=mtime_days.count)
         if mtime_days.count(top) / len(mtime_days) > 0.5:
-            warn(f"у {mtime_days.count(top)} заметок без даты одинаковый mtime ({top}) — похоже на дату копирования, "
-                 "а не написания. Такие даты коуч помечает как ненадёжные.")
+            warn(trl("у {0} заметок без даты одинаковый mtime ({1}) — похоже на дату копирования, а не написания. Такие даты коуч помечает как ненадёжные.", mtime_days.count(top), top))
             for n in notes:
                 if n.date_source == "mtime" and n.note_date == top:
                     n.date_source = "mtime_bulk"

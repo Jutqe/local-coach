@@ -27,14 +27,23 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from typing import Any, Callable
 
-from . import bodydouble, commitments, guard, inventory, lifereset, people, store, triageweb
+from . import bodydouble, commitments, guard, inventory, lifereset, people, store, triageweb, webi18n
 from . import history as chronology
 from .chat import Coach, _REMEMBER, pending_count, remember_text
 from .config import Config
 from .ollama import Ollama, OllamaError, answers, port_candidates
 from .util import think_command, today
+from .i18n import trl
 
 PAGE = Path(__file__).resolve().parent / "web" / "index.html"
+_PAGE_CACHE: list[bytes] = []
+
+
+def _page_bytes() -> bytes:
+    """Страница на языке процесса (webi18n); собирается один раз."""
+    if not _PAGE_CACHE:
+        _PAGE_CACHE.append(webi18n.localize(PAGE.read_text(encoding="utf-8")).encode("utf-8"))
+    return _PAGE_CACHE[0]
 AUDIO = PAGE.parent / "audio"            # записи для фоновых звуков; нет файла — страница рисует звук сама
 AUDIO_TYPES = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".ogg": "audio/ogg"}
 COOKIE = "basil"
@@ -47,14 +56,14 @@ FAIL_DELAY = 1.0               # пауза после неверного PIN-а
 TERMINAL_ONLY = {"/review", "/calibrate", "/checkin", "/чекин", "/чек-ин", "/people", "/люди", "/agreements",
                  "/договорённости", "/договоренности", "/import", "/forget", "/remember",
                  "/sweep", "/пачкой", "/audit", "/аудит", "/hypotheses", "/гипотезы"}
-HELP = ("Здесь работает разговор и режим присутствия.\n"
-        "/think — рассуждение вкл/выкл (или /think вопрос — на один ответ)\n"
-        "/focus задача — режим присутствия (стоп — «стоп» или /focus); можно с пунктом и планом: /focus LR-12 на 50 минут\n"
-        "/bio [год] — хронология из базы\n/sources — откуда ответ\n/new — новая сессия (итог сохранится)\n"
-        "Life Reset: /reset – обзор программы, /triage [область] – разбор реестра, /idea текст – записать идею в реестр, "
-        "/depth 1|2|3 – глубина разговора\n"
-        "Разбор предложений в память, калибровка, люди, договорённости, импорт, а также аудит, гипотезы и разбор "
-        "пачкой (sweep) Life Reset — пока в терминале.")
+HELP = (trl("Здесь работает разговор и режим присутствия.\n"
+            "/think — рассуждение вкл/выкл (или /think вопрос — на один ответ)\n"
+            "/focus задача — режим присутствия (стоп — «стоп» или /focus); можно с пунктом и планом: /focus LR-12 на 50 минут\n"
+            "/bio [год] — хронология из базы\n"
+            "/sources — откуда ответ\n"
+            "/new — новая сессия (итог сохранится)\n"
+            "Life Reset: /reset – обзор программы, /triage [область] – разбор реестра, /idea текст – записать идею в реестр, /depth 1|2|3 – глубина разговора\n"
+            "Разбор предложений в память, калибровка, люди, договорённости, импорт, а также аудит, гипотезы и разбор пачкой (sweep) Life Reset — пока в терминале."))
 
 
 class Auth:
@@ -153,12 +162,11 @@ class WebCoach:
         self.primary = cfg.ollama
         llm = connect(cfg)
         if not cfg.db_path.exists():
-            raise SystemExit("База ещё не построена. Сначала: python3 coach.py update")
+            raise SystemExit(trl("База ещё не построена. Сначала: python3 coach.py update"))
         self.coach = Coach(cfg, llm)
         stored = store.get_meta(self.coach.conn, "embed_model")
         if stored and stored != cfg.embed_model:
-            raise SystemExit(f"База построена с эмбеддинг-моделью {stored}, а выбрана {cfg.embed_model}. "
-                             "Запусти python3 coach.py update.")
+            raise SystemExit(trl("База построена с эмбеддинг-моделью {0}, а выбрана {1}. Запусти python3 coach.py update.", stored, cfg.embed_model))
         self.lock = threading.Lock()          # один разговор за раз: коуч хранит одну сессию
         self.focus: bodydouble.BodyDouble | None = None
         self.ask_outcome: tuple[int, float] | None = None   # (id сессии фокуса, когда спросили «как прошло»)
@@ -209,7 +217,7 @@ class WebCoach:
         try:
             llm = self.connect(fresh)
         except SystemExit as exc:
-            print(f"[web] модель не найдена: {exc}", flush=True)
+            print(trl("[web] модель не найдена: {0}", exc), flush=True)
             return
         if not fresh.on_fallback:
             fresh.think_chat = old.cfg.think_chat
@@ -241,7 +249,7 @@ class WebCoach:
                 if self.coach.turns and now - self.last_activity > IDLE_END_SESSION:
                     self._end_session()
             except Exception as exc:  # noqa: BLE001 — сторож не должен падать
-                print(f"[web] сторож: {type(exc).__name__}", flush=True)
+                print(trl("[web] сторож: {0}", type(exc).__name__), flush=True)
             finally:
                 self.lock.release()
 
@@ -282,8 +290,7 @@ class WebCoach:
         minutes = bodydouble.record(self.coach.conn, self.coach._ensure_session(), fo)
         self.ask_outcome = (fo.row_id, time.monotonic()) if minutes and fo.row_id else None
         if minutes:
-            self.coach.turns.append({"role": "user", "content": f"[Работал в режиме присутствия: {fo.task or 'без названия'}, "
-                                                                f"{bodydouble._minutes(minutes)}]"})
+            self.coach.turns.append({"role": "user", "content": trl("[Работал в режиме присутствия: {0}, {1}]", fo.task or trl("без названия"), bodydouble._minutes(minutes))})
         self.broadcast({"ev": "state", "v": "stretch" if announce else "idle"})
         return bodydouble.end_text(fo, minutes)
 
@@ -295,7 +302,7 @@ class WebCoach:
             return
         self.last_seen = self.last_activity = time.monotonic()
         if not self.lock.acquire(blocking=False):
-            out({"ev": "system", "t": "Коуч ещё отвечает. Подожди секунду."})
+            out({"ev": "system", "t": trl("Коуч ещё отвечает. Подожди секунду.")})
             return
         try:
             self._handle_locked(text, out)
@@ -335,33 +342,32 @@ class WebCoach:
             word = arg.casefold()
             area = inventory.resolve_area(arg) if arg and word not in ("быстро", "quick") else None
             if arg and word not in ("быстро", "quick") and not area:
-                out({"ev": "system", "t": "Не нашёл такую область. Напиши /triage без слов или с названием, например /triage финансы."})
+                out({"ev": "system", "t": trl("Не нашёл такую область. Напиши /triage без слов или с названием, например /triage финансы.")})
                 return
             out({"ev": "open", "v": "triage", "area": area or ""})
             return
         if head in TERMINAL_ONLY:
-            out({"ev": "system", "t": "Это пока только в терминале: python3 coach.py chat (там " + head + ")."})
+            out({"ev": "system", "t": trl("Это пока только в терминале: python3 coach.py chat (там ") + head + ")."})
             return
         if head == "/new":
             out({"ev": "state", "v": "think"})
             self._end_session()
             out({"ev": "reset"})
-            out({"ev": "system", "t": "Новая сессия."})
+            out({"ev": "system", "t": trl("Новая сессия.")})
             return
         if head == "/sources":
             out({"ev": "system", "t": "\n".join(dict.fromkeys(c.last_refs)) or "—"})
             return
         if head in ("/think", "/подумай", "/думай"):
             if cfg.on_fallback:
-                out({"ev": "system", "t": "Сейчас модель на процессоре сервера (ПК выключен): с рассуждением ответ шёл бы "
-                                          "десятки минут, поэтому оно выключено."})
+                out({"ev": "system", "t": trl("Сейчас модель на процессоре сервера (ПК выключен): с рассуждением ответ шёл бы десятки минут, поэтому оно выключено.")})
                 return
             if think_command(cfg, arg) == "once":
                 c.think_once = True
                 text = arg
                 head = ""
             if head:
-                out({"ev": "system", "t": "Рассуждение " + ("включено: ответы дольше, но вдумчивее." if cfg.think_chat else "выключено.")})
+                out({"ev": "system", "t": trl("Рассуждение ") + (trl("включено: ответы дольше, но вдумчивее.") if cfg.think_chat else trl("выключено."))})
                 return
         if head in ("/bio", "/био", "/history", "/история") or (self.focus is None and chronology.ASK.search(text)
                                                            and not head.startswith("/")):
@@ -373,24 +379,23 @@ class WebCoach:
         if head in ("/idea", "/идея"):
             same = inventory.find_same_title(c.conn, arg) if arg else None
             if same:
-                out({"ev": "system", "t": f"Такая уже есть: {inventory.code(same)}."})
+                out({"ev": "system", "t": trl("Такая уже есть: {0}.", inventory.code(same))})
                 return
             iid = inventory.capture(c.conn, c.llm, arg, check_dup=False) if arg else None
-            out({"ev": "system", "t": f"Записал в реестр как {inventory.code(iid)} – «не разобрано». Решение – при разборе "
-                                      "(python3 coach.py triage)." if iid else "Напиши идею после команды: /idea текст"})
+            out({"ev": "system", "t": trl("Записал в реестр как {0} – «не разобрано». Решение – при разборе (python3 coach.py triage).", inventory.code(iid)) if iid else trl("Напиши идею после команды: /idea текст")})
             return
         if head in ("/depth", "/глубина"):
             if arg.isdigit() and lifereset.set_depth(c.conn, int(arg)):
-                out({"ev": "system", "t": f"Глубина разговора: {arg} – {lifereset.DEPTHS[int(arg)][0]}."})
+                out({"ev": "system", "t": trl("Глубина разговора: {0} – {1}.", arg, lifereset.DEPTHS[int(arg)][0])})
             else:
                 d = lifereset.depth(c.conn)
-                out({"ev": "system", "t": f"Глубина сейчас: {d} – {lifereset.DEPTHS[d][0]}. Сменить: /depth 1, 2 или 3."})
+                out({"ev": "system", "t": trl("Глубина сейчас: {0} – {1}. Сменить: /depth 1, 2 или 3.", d, lifereset.DEPTHS[d][0])})
             return
         if head.startswith("/"):
-            out({"ev": "system", "t": "Такой команды здесь нет. /help — что есть."})
+            out({"ev": "system", "t": trl("Такой команды здесь нет. /help — что есть.")})
             return
         if guard.text_hold(text):
-            out({"ev": "system", "t": "Сообщение не отправлено: похоже на пароль или токен. Не вводи их сюда."})
+            out({"ev": "system", "t": trl("Сообщение не отправлено: похоже на пароль или токен. Не вводи их сюда.")})
             return
         m = _REMEMBER.match(text)
         if m:
@@ -418,7 +423,7 @@ class WebCoach:
         try:
             c.reply(text, focus_task=self.focus.task if self.focus else None)
         except (OllamaError, OSError) as exc:
-            out({"ev": "system", "t": f"Модель не ответила ({type(exc).__name__}). Проверю связь и попробуем ещё раз."})
+            out({"ev": "system", "t": trl("Модель не ответила ({0}). Проверю связь и попробуем ещё раз.", type(exc).__name__)})
             self._reconnect()
         finally:
             c.sink = None
@@ -486,7 +491,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = self.path.split("?", 1)[0]
         if path == "/":
-            self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+            self._send(200, _page_bytes(), "text/html; charset=utf-8")
         elif path == "/api/state":
             if not self._authed():
                 self._json(200, {"auth": False, "pin": self.auth.enabled})
@@ -643,10 +648,9 @@ def serve(make_cfg: Callable[[], Config], connect: Callable[[Config], Ollama], h
     pin = os.environ.get("LOCAL_COACH_WEB_PIN", "").strip()
     own = (make_cfg().workspace / ".web_pin").exists()
     if not pin and not own and host not in ("127.0.0.1", "localhost", "::1"):
-        raise SystemExit("Без PIN-кода коуч слушает только localhost. Задай LOCAL_COACH_WEB_PIN "
-                         "(например в файле окружения юнита) или --host 127.0.0.1.")
+        raise SystemExit(trl("Без PIN-кода коуч слушает только localhost. Задай LOCAL_COACH_WEB_PIN (например в файле окружения юнита) или --host 127.0.0.1."))
     if pin and len(pin) < 4:
-        raise SystemExit("LOCAL_COACH_WEB_PIN короче 4 символов.")
+        raise SystemExit(trl("LOCAL_COACH_WEB_PIN короче 4 символов."))
     wc = WebCoach(make_cfg, connect)
     Handler.wc, Handler.auth = wc, Auth(wc.cfg.workspace, pin)
     httpd = ThreadingHTTPServer((host, port), Handler)
@@ -656,8 +660,7 @@ def serve(make_cfg: Callable[[], Config], connect: Callable[[Config], Ollama], h
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, stop_gracefully)
-    print(f"Local Coach web: http://{host}:{port}/  (PIN {'свой' if own else 'временный, при первом входе предложит свой' if pin else 'не задан — только localhost'}; "
-          f"модель: {'сервер, процессор' if wc.cfg.on_fallback else wc.cfg.ollama})", flush=True)
+    print(trl("Local Coach web: http://{0}:{1}/  (PIN {2}; модель: {3})", host, port, trl("свой") if own else trl("временный, при первом входе предложит свой") if pin else trl("не задан — только localhost"), trl("сервер, процессор") if wc.cfg.on_fallback else wc.cfg.ollama), flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

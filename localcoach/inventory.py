@@ -27,6 +27,7 @@ from .config import (DOMAIN_TITLES, LR_CLOSED, LR_OPEN, LR_PARKED, LR_STATUS_TIT
 from .ollama import Ollama, OllamaError, TruncatedError, embed_doc_text
 from .prompts import LR_ANSWER_SCHEMA, LR_ANSWER_SYSTEM, LR_GROUP_SCHEMA, LR_GROUP_SYSTEM
 from .util import Progress, digest, dumps, fmt_duration, iso_now, loads, normalize_time_ref, today, warn
+from .i18n import alternates, trl
 
 LR_VERSION = "1"            # версия промпта группы: смена – группы называются заново
 MATCH = 0.86                # та же тема, что уже есть в реестре (косинус названия и сути)
@@ -45,29 +46,31 @@ KEEP_BACKUPS = 5
 SHORTCUTS = {
     "а": "active", "и": "incubating", "к": "someday", "ж": "waiting", "п": "delegated",
     "г": "completed", "о": "abandoned", "х": "archived", "у": "clarification", "н": "dismissed",
+    # то же английскими буквами (a active, i incubating, s someday, w waiting, h handed over, d done, l let go,
+    # x archive, u unsure, n not a project); русские работают всегда, язык интерфейса на ввод не влияет
+    "a": "active", "i": "incubating", "s": "someday", "w": "waiting", "h": "delegated",
+    "d": "completed", "l": "abandoned", "x": "archived", "u": "clarification", "n": "dismissed",
 }
-SHORTCUT_HELP = ("а – активно, и – инкубатор (развивать без обязательств), к – когда-нибудь, ж – жду, п – передал, "
-                 "г – уже сделано, о – отпускаю, х – в архив (как история), у – уточнить позже, н – это не пункт, "
-                 "= N – то же, что пункт N; Enter – пропустить, «стоп» – закончить")
-STOP = re.compile(r"^(стоп|хватит|/stop|/exit|q|выход)$", re.I)
+SHORTCUT_HELP = (trl("а – активно, и – инкубатор (развивать без обязательств), к – когда-нибудь, ж – жду, п – передал, г – уже сделано, о – отпускаю, х – в архив (как история), у – уточнить позже, н – это не пункт, = N – то же, что пункт N; Enter – пропустить, «стоп» – закончить"))
+STOP = re.compile(r"^(стоп|хватит|/stop|/exit|q|выход|stop|enough|quit|exit)$", re.I)
 
 # Вопросы по типу: из концепции, код, а не модель – чтобы карточка была предсказуемой.
 QUESTIONS = {
-    "project": ("Тебе всё ещё интересна сама идея?", "Есть ли у проекта место среди твоих нынешних приоритетов?",
-                "Что произойдёт, если ты окончательно от него откажешься?"),
-    "idea": ("Цепляет ли эта идея сейчас – или это интерес прежнего тебя?",
-             "Что в ней ценного, даже если не делать её целиком?",
-             "Проверить её небольшим шагом или спокойно отпустить?"),
-    "wish": ("Хочется ли этого сейчас, или это старое желание, которое просто осталось в списке?",
-             "Что изменится в жизни, если оно сбудется?", "Что мешало до сих пор?"),
-    "commitment": ("Перед кем это обязательство – перед другим человеком или перед собой?",
-                   "Оно ещё актуально?", "Выполнить, пересмотреть договорённость или честно закрыть?"),
-    "question": ("Нужно ли решать это сейчас?", "Чего не хватает для решения?",
-                 "Если не решать – когда к нему вернуться?"),
-    "situation": ("Это всё ещё занимает мысли?", "Хочется что-то с этим сделать – или достаточно осмыслить и принять?"),
-    "routine": ("Это всё ещё нужно делать?", "Как сделать, чтобы это шло само, без постоянного напоминания?"),
-    "material": ("Нужно ли это для нынешних дел?", "Оставить как справку или отпустить?"),
-    "experience": ("Что этот опыт тебе дал?", "Есть ли в нём урок, который стоит сохранить?"),
+    "project": (trl("Тебе всё ещё интересна сама идея?"), trl("Есть ли у проекта место среди твоих нынешних приоритетов?"),
+                trl("Что произойдёт, если ты окончательно от него откажешься?")),
+    "idea": (trl("Цепляет ли эта идея сейчас – или это интерес прежнего тебя?"),
+             trl("Что в ней ценного, даже если не делать её целиком?"),
+             trl("Проверить её небольшим шагом или спокойно отпустить?")),
+    "wish": (trl("Хочется ли этого сейчас, или это старое желание, которое просто осталось в списке?"),
+             trl("Что изменится в жизни, если оно сбудется?"), trl("Что мешало до сих пор?")),
+    "commitment": (trl("Перед кем это обязательство – перед другим человеком или перед собой?"),
+                   trl("Оно ещё актуально?"), trl("Выполнить, пересмотреть договорённость или честно закрыть?")),
+    "question": (trl("Нужно ли решать это сейчас?"), trl("Чего не хватает для решения?"),
+                 trl("Если не решать – когда к нему вернуться?")),
+    "situation": (trl("Это всё ещё занимает мысли?"), trl("Хочется что-то с этим сделать – или достаточно осмыслить и принять?")),
+    "routine": (trl("Это всё ещё нужно делать?"), trl("Как сделать, чтобы это шло само, без постоянного напоминания?")),
+    "material": (trl("Нужно ли это для нынешних дел?"), trl("Оставить как справку или отпустить?")),
+    "experience": (trl("Что этот опыт тебе дал?"), trl("Есть ли в нём урок, который стоит сохранить?")),
 }
 
 
@@ -142,7 +145,7 @@ def _group(key: str, fs: list[sqlite3.Row]) -> dict[str, Any] | None:
         claims.append(f)
     titles = []
     for f in fs:
-        t = f["note_title"] or ("разговор" if f["origin"] in ("chat", "session") else "")
+        t = f["note_title"] or (trl("разговор") if f["origin"] in ("chat", "session") else "")
         if t and t not in titles:
             titles.append(t)
     intents = [f["intent_status"] for f in dated if f["intent_status"] not in ("none", "unclear")]
@@ -162,25 +165,25 @@ def hint(g: dict[str, Any]) -> str:
     out = []
     if g["intents"]:
         latest = g["intents"][0]
-        out.append({"completed": "в заметках отмечено как сделанное", "abandoned": "в заметках ты от этого отказывался",
-                    "in_progress": "в заметках – в работе", "planned": "в заметках был план или срок"}.get(latest, ""))
+        out.append({"completed": trl("в заметках отмечено как сделанное"), "abandoned": trl("в заметках ты от этого отказывался"),
+                    "in_progress": trl("в заметках – в работе"), "planned": trl("в заметках был план или срок")}.get(latest, ""))
     if g["currency"] == {"past"}:
-        out.append("по сверке с биографией – в прошлом")
+        out.append(trl("по сверке с биографией – в прошлом"))
     age = timeline.months_ago(g["last_date"])
     if age is not None and age >= 36:
-        out.append(f"последнее упоминание {timeline.age_text(age)}")
+        out.append(trl("последнее упоминание {0}", timeline.age_text(age)))
     return "; ".join(x for x in out if x)
 
 
 def _claim_text(claim: str) -> str:
-    return re.sub(r"^Автор[:,]?\s+", "", claim.strip()).rstrip(".")
+    return re.sub(r"^(?:Автор|The author|Author)[:,]?\s+", "", claim.strip(), flags=re.I).rstrip(".")
 
 
 def _group_line(gid: str, g: dict[str, Any]) -> str:
-    span = g["first_date"][:4] if g["first_date"] else "дата неизвестна"
+    span = g["first_date"][:4] if g["first_date"] else trl("дата неизвестна")
     if g["last_date"] and g["first_date"] and g["last_date"][:4] != g["first_date"][:4]:
         span += f"-{g['last_date'][:4]}"
-    head = f"{gid} | заметки: " + (", ".join(f"«{t}»" for t in g["titles"]) or "–") + f" | {span}, упоминаний: {g['mentions']}"
+    head = trl("{0} | заметки: ", gid) + (", ".join(f"«{t}»" for t in g["titles"]) or "–") + trl(" | {0}, упоминаний: {1}", span, g['mentions'])
     lines = [head]
     for f in g["claims"]:
         when = (_date(f) or "")[:7]
@@ -192,7 +195,7 @@ def _group_line(gid: str, g: dict[str, Any]) -> str:
 def _name_batch(llm: Ollama, cfg: Config, batch: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Название, тип и суть групп одним вызовом. Обрезанный ответ – делим пакет пополам."""
     ids = {f"G{i + 1}": g for i, g in enumerate(batch)}
-    user = "Группы:\n\n" + "\n\n".join(_group_line(gid, g) for gid, g in ids.items())
+    user = trl("Группы:\n\n") + "\n\n".join(_group_line(gid, g) for gid, g in ids.items())
     try:
         raw = llm.chat_json(LR_GROUP_SYSTEM, user, LR_GROUP_SCHEMA, num_predict=350 * len(batch) + 400, attempts=2,
                             heavy=True)
@@ -230,7 +233,7 @@ def is_single(g: dict[str, Any]) -> bool:
 
 def _fallback_name(g: dict[str, Any]) -> dict[str, Any]:
     first = g["claims"][0] if g["claims"] else None
-    text = _claim_text(first["claim"]) if first is not None else (g["titles"][0] if g["titles"] else "Без названия")
+    text = _claim_text(first["claim"]) if first is not None else (g["titles"][0] if g["titles"] else trl("Без названия"))
     words = text.split()
     title = " ".join(words[:7]) + ("…" if len(words) > 7 else "")
     type_ = "project" if g["key"].startswith("note:") else FALLBACK_TYPE.get(first["kind"] if first is not None else "", "idea")
@@ -294,7 +297,7 @@ def build(conn: sqlite3.Connection, llm: Ollama, cfg: Config, quiet: bool = Fals
     # Копия – только при явной сборке: на каждом update пять копий быстро вытеснили бы ту, что до разбора.
     if not quiet and store.scalar(conn, "SELECT COUNT(*) FROM lr_items"):
         path = backup(conn, cfg, "inventory")
-        say(f"Копия базы перед сборкой: {path}")
+        say(trl("Копия базы перед сборкой: {0}", path))
     gs = groups(conn)
     stats["groups"] = len(gs)
     named: dict[str, dict[str, Any]] = {}
@@ -313,13 +316,13 @@ def build(conn: sqlite3.Connection, llm: Ollama, cfg: Config, quiet: bool = Fals
             todo.append(g)
     if todo:
         batches = [todo[i:i + BATCH] for i in range(0, len(todo), BATCH)]
-        progress = Progress(len(batches), "реестр: называю группы, пакет") if not quiet else None
+        progress = Progress(len(batches), trl("реестр: называю группы, пакет")) if not quiet else None
         for batch in batches:
             started = time.monotonic()
             try:
                 res = _name_batch(llm, cfg, batch)
             except OllamaError as exc:
-                warn(f"сборка реестра прервана: {exc}. Готовое сохранено, повторный запуск продолжит.")
+                warn(trl("сборка реестра прервана: {0}. Готовое сохранено, повторный запуск продолжит.", exc))
                 break
             for g in batch:
                 if g["key"] not in res:
@@ -361,7 +364,7 @@ def build(conn: sqlite3.Connection, llm: Ollama, cfg: Config, quiet: bool = Fals
         try:
             vecs = _vectors(conn, llm, cfg, [_vec_text(n["title"], n["summary"]) for _g, n in ready])
         except OllamaError as exc:
-            warn(f"векторы реестра не посчитаны: {exc}. Повторный запуск продолжит.")
+            warn(trl("векторы реестра не посчитаны: {0}. Повторный запуск продолжит.", exc))
             conn.commit()
             return stats
         stats["embedded"] = _vectors.last_new
@@ -523,7 +526,9 @@ def add_months(d: date, months: int) -> date:
     return date(d.year + y, m + 1, day)
 
 
-_IN = re.compile(r"через\s+(\d+|полгода|год|месяц|неделю|пару\s+месяцев)\s*(дн|день|нед|мес|год|лет)?", re.I)
+_IN = re.compile(r"(?:через|in)\s+(\d+|полгода|год|месяц|неделю|пару\s+месяцев|half\s+a\s+year|a\s+year|a\s+month|a\s+week|a\s+couple\s+of\s+months)"
+                 r"\s*(дн|день|нед|мес|год|лет|days?|weeks?|months?|years?)?", re.I)
+_IN_EN = {"half a year": "полгода", "a year": "год", "a month": "месяц", "a week": "неделю", "a couple of months": "пару месяцев"}
 
 
 def parse_review(text: str) -> str | None:
@@ -537,7 +542,8 @@ def parse_review(text: str) -> str | None:
     m = _IN.search(text)
     if not m:
         return None
-    n, unit = m.group(1).casefold(), (m.group(2) or "").casefold()
+    n, unit = re.sub(r"\s+", " ", m.group(1).casefold()), (m.group(2) or "").casefold()
+    n = _IN_EN.get(n, n)
     base = date.fromisoformat(today())
     if n == "полгода":
         return add_months(base, 6).isoformat()
@@ -550,13 +556,13 @@ def parse_review(text: str) -> str | None:
     if n.startswith("пару"):
         return add_months(base, 2).isoformat()
     k = int(n)
-    if unit.startswith(("дн", "день")):
+    if unit.startswith(("дн", "день", "day")):
         return (base + timedelta(days=k)).isoformat()
     if not unit:
         return None      # «через 10» – непонятно чего; лучше спросить, чем угадать месяцы
-    if unit.startswith("нед"):
+    if unit.startswith(("нед", "week")):
         return (base + timedelta(days=7 * k)).isoformat()
-    if unit.startswith(("год", "лет")):
+    if unit.startswith(("год", "лет", "year")):
         return add_months(base, 12 * k).isoformat()
     return add_months(base, k).isoformat()
 
@@ -733,12 +739,12 @@ def sources(conn: sqlite3.Connection, r: sqlite3.Row, limit: int = 3) -> list[sq
 
 def span(r: sqlite3.Row) -> str:
     if not r["first_date"]:
-        return f"дат в тексте нет, файл менялся {r['touched'][:7]}" if r["touched"] else "дата неизвестна"
+        return trl("дат в тексте нет, файл менялся {0}", r['touched'][:7]) if r["touched"] else trl("дата неизвестна")
     s = r["first_date"][:4]
     if r["last_date"] and r["last_date"][:4] != s:
         s += f"-{r['last_date'][:4]}"
     age = timeline.months_ago(r["last_date"])
-    return s + (f" (последнее упоминание {timeline.age_text(age)})" if age is not None and age >= 12 else "")
+    return s + (trl(" (последнее упоминание {0})", timeline.age_text(age)) if age is not None and age >= 12 else "")
 
 
 def card(conn: sqlite3.Connection, r: sqlite3.Row) -> str:
@@ -747,34 +753,34 @@ def card(conn: sqlite3.Connection, r: sqlite3.Row) -> str:
     if r["status"] != "inbox":
         state = LR_STATUS_TITLES[r["status"]]
         if r["status"] in LR_PARKED and r["review_on"]:
-            state += f", пересмотр был назначен на {r['review_on']}"
-        lines.append(f"Сейчас: {state}")
+            state += trl(", пересмотр был назначен на {0}", r['review_on'])
+        lines.append(trl("Сейчас: {0}", state))
     if r["resurfaced"]:
         last = conn.execute("SELECT reason, created_at FROM lr_decisions WHERE item_id=? ORDER BY id DESC LIMIT 1",
                             (r["id"],)).fetchone()
-        lines.append("Снова появилось в заметках после решения"
-                     + (f" от {last['created_at'][:10]}" + (f" («{last['reason']}»)" if last["reason"] else "") if last else ""))
+        lines.append(trl("Снова появилось в заметках после решения")
+                     + (trl(" от {0}", last['created_at'][:10]) + (f" («{last['reason']}»)" if last["reason"] else "") if last else ""))
     where = f"{r['notes_count']} {timeline._plural(r['notes_count'], 'заметка', 'заметки', 'заметок')}" \
         if r["origin"] == "memory" else "из разговора"
-    lines.append(f"Откуда: {where}, {span(r)}")
+    lines.append(trl("Откуда: {0}, {1}", where, span(r)))
     if r["summary"]:
-        lines.append(f"Суть: {r['summary']}")
+        lines.append(trl("Суть: {0}", r['summary']))
     if r["want"]:
-        lines.append(f"Чего хотелось: {r['want']}")
+        lines.append(trl("Чего хотелось: {0}", r['want']))
     for f in sources(conn, r):
         when = (f["event_date"] or f["note_date"] or "")[:7]
-        src = f"«{f['note_title']}»" if f["note_title"] else "разговор"
+        src = f"«{f['note_title']}»" if f["note_title"] else trl("разговор")
         line = f"  - {_claim_text(f['claim'])} ({src}{', ' + when if when else ''})"
         if f["evidence_quote"] and f["quote_match"] in ("exact", "partial"):
             line += f"\n    «{f['evidence_quote'][:160]}»"
         lines.append(line)
     if r["hint"]:
-        lines.append(f"По памяти: {r['hint']}")
+        lines.append(trl("По памяти: {0}", r['hint']))
     if r["next_step"]:
-        lines.append(f"Следующий шаг: {r['next_step']}")
+        lines.append(trl("Следующий шаг: {0}", r['next_step']))
     rel = related(conn, r)
     if rel:
-        lines.append("Похоже на: " + "; ".join(f"{code(o['id'])} {o['title']} ({LR_STATUS_TITLES[o['status']]})"
+        lines.append(trl("Похоже на: ") + "; ".join(f"{code(o['id'])} {o['title']} ({LR_STATUS_TITLES[o['status']]})"
                                                 for o, _s in rel))
     return "\n".join(lines)
 
@@ -790,7 +796,7 @@ def _ask(prompt: str) -> str | None:
 
 
 def _interpret(llm: Ollama, card_text: str, answer: str) -> dict[str, str]:
-    user = (f"Сегодня: {today()}.\n\nКарточка:\n{card_text}\n\nОтвет человека:\n{answer}")
+    user = (trl("Сегодня: {0}.\n\nКарточка:\n{1}\n\nОтвет человека:\n{2}", today(), card_text, answer))
     try:
         raw = llm.chat_json(LR_ANSWER_SYSTEM, user, LR_ANSWER_SCHEMA, num_predict=300, attempts=2)
     except OllamaError:
@@ -807,8 +813,7 @@ def _confirm_active(conn: sqlite3.Connection, r: sqlite3.Row) -> bool:
         return True
     cap = capacity(conn)
     if not cap:
-        ans = _ask("Сколько направлений одновременно ты реально тянешь? Не «сколько хочется», а сколько получает "
-                   "регулярное внимание. Число (Enter – спросить потом): ")
+        ans = _ask(trl("Сколько направлений одновременно ты реально тянешь? Не «сколько хочется», а сколько получает регулярное внимание. Число (Enter – спросить потом): "))
         if ans and ans.isdigit() and int(ans) > 0:
             store.set_meta(conn, "lr_capacity", ans)
             conn.commit()
@@ -818,9 +823,9 @@ def _confirm_active(conn: sqlite3.Connection, r: sqlite3.Row) -> bool:
         names = [x["title"] for x in conn.execute(
             "SELECT title FROM lr_items WHERE status='active' AND merged_into IS NULL AND id!=? ORDER BY decided_at",
             (r["id"],)).fetchall()][:8]
-        print(f"Активных уже {n} при твоей ёмкости {cap}: " + "; ".join(names) + ".")
-        ans = _ask("Всё равно сделать активным? «д» – да, Enter – нет (выбери другой статус): ")
-        return bool(ans) and ans.casefold() in ("д", "да", "y")
+        print(trl("Активных уже {0} при твоей ёмкости {1}: ", n, cap) + "; ".join(names) + ".")
+        ans = _ask(trl("Всё равно сделать активным? «д» – да, Enter – нет (выбери другой статус): "))
+        return bool(ans) and ans.casefold() in ("д", "да", "y", "yes")
     return True
 
 
@@ -844,14 +849,14 @@ def _triage_one(conn: sqlite3.Connection, llm: Ollama, r: sqlite3.Row) -> str:
     if ans is None or STOP.match(ans or ""):
         return "stop"
     if not ans:
-        print("Пропустил.\n")
+        print(trl("Пропустил.\n"))
         return "skip"
     m = re.fullmatch(r"=\s*(?:LR-)?(\d+)", ans, re.I)
     if m:
         if merge(conn, r["id"], int(m.group(1))):
-            print("Склеил с " + code(int(m.group(1))) + ".\n")
+            print(trl("Склеил с ") + code(int(m.group(1))) + ".\n")
             return "done"
-        print("Нет такого пункта (или это он сам).\n")
+        print(trl("Нет такого пункта (или это он сам).\n"))
         return "skip"
     status, reason, step, review, proposal, answer = "", "", "", "", "", ""
     letter = ans.casefold().rstrip(".")
@@ -859,47 +864,47 @@ def _triage_one(conn: sqlite3.Connection, llm: Ollama, r: sqlite3.Row) -> str:
         status = SHORTCUTS[letter]
     else:
         if guard.text_hold(ans):
-            print("Не записал: похоже на пароль или токен.\n")
+            print(trl("Не записал: похоже на пароль или токен.\n"))
             return "skip"
         answer = ans
         got = _interpret(llm, shown, ans)
         if not got["status"]:
             record_clarification(conn, r, ans)
-            print("Решения в ответе не услышал – записал ответ, пункт остаётся «уточнить».\n")
+            print(trl("Решения в ответе не услышал – записал ответ, пункт остаётся «уточнить».\n"))
             return "done"
         proposal = got["status"]
         reason, step, review = got["reason"], got["next_step"], got["review_on"]
-        say = f"Понял так: {LR_STATUS_TITLES[proposal]}" + (f" – {reason}" if reason else "")
+        say = trl("Понял так: {0}", LR_STATUS_TITLES[proposal]) + (f" – {reason}" if reason else "")
         if step:
-            say += f"; следующий шаг: {step}"
-        ok = _ask(say + ". Так? (Enter – да, буква – другой статус, 0 – пока не решать) ")
+            say += trl("; следующий шаг: {0}", step)
+        ok = _ask(say + trl(". Так? (Enter – да, буква – другой статус, 0 – пока не решать) "))
         if ok is None or ok == "0":
             print()
             return "skip"
         if ok and ok.casefold().rstrip(".") in SHORTCUTS:
             status = SHORTCUTS[ok.casefold().rstrip(".")]
-        elif ok and ok.casefold() not in ("да", "д", "так", "y"):
-            print("Не понял – пропускаю.\n")
+        elif ok and ok.casefold() not in ("да", "д", "так", "y", "yes", "yep", "sure", "ok"):
+            print(trl("Не понял – пропускаю.\n"))
             return "skip"
         else:
             status = proposal
     if status == "active" and not _confirm_active(conn, r):
-        print("Не стал делать активным.\n")
+        print(trl("Не стал делать активным.\n"))
         return "skip"
     if status == "active" and not step and r["type"] not in ("material", "experience"):
-        step = _ask("Какой следующий конкретный шаг? (Enter – пропустить) ") or ""
+        step = _ask(trl("Какой следующий конкретный шаг? (Enter – пропустить) ")) or ""
     if status in ("abandoned", "archived") and not reason:
-        reason = _ask("Почему – одной фразой? Это поможет не начинать тот же круг заново. (Enter – пропустить) ") or ""
+        reason = _ask(trl("Почему – одной фразой? Это поможет не начинать тот же круг заново. (Enter – пропустить) ")) or ""
     if status in LR_PARKED:
         default = default_review(status)
         got_review = parse_review(review) if review else None
         if not got_review:
-            ans2 = _ask(f"Когда пересмотреть? (Enter – {default}; «через год», «2027-06») ")
+            ans2 = _ask(trl("Когда пересмотреть? (Enter – {0}; «через год», «2027-06») ", default))
             got_review = parse_review(ans2 or "") or default
         review = got_review
     decide(conn, r["id"], status, reason=reason, answer=answer, proposal=proposal, next_step=step or None,
            review_on=review or None)
-    print(f"Записал: {LR_STATUS_TITLES[status]}" + (f", пересмотр {review}" if status in LR_PARKED else "") + ".\n")
+    print(trl("Записал: {0}", LR_STATUS_TITLES[status]) + (trl(", пересмотр {0}", review) if status in LR_PARKED else "") + ".\n")
     return "done"
 
 
@@ -910,7 +915,10 @@ def resolve_area(text: str) -> str | None:
         return None
     if t in DOMAIN_TITLES:
         return t
-    hits = [k for k, title in DOMAIN_TITLES.items() if title.casefold().startswith(t) or t in title.casefold()]
+    # Подпись на текущем языке – по началу или по части слова; на другом языке – только по началу слова.
+    hits = [k for k, title in DOMAIN_TITLES.items()
+            if title.casefold().startswith(t) or t in title.casefold()
+            or any(w.startswith(t) for a in alternates(title) for w in a.casefold().split())]
     return hits[0] if len(hits) == 1 else None
 
 
@@ -922,12 +930,12 @@ def area_counts(conn: sqlite3.Connection) -> list[tuple[str, int]]:
 def _start(conn: sqlite3.Connection, q: list[sqlite3.Row]) -> bool:
     total = store.scalar(conn, "SELECT COUNT(*) FROM lr_items WHERE merged_into IS NULL AND status!='dismissed'") or 0
     if not total:
-        print("Реестр пуст. Собрать его из памяти: python3 coach.py inventory build\n")
+        print(trl("Реестр пуст. Собрать его из памяти: python3 coach.py inventory build\n"))
         return False
     if not q:
         n = bulk_count(conn)
-        print(f"Здесь разбирать нечего. Одиночных упоминаний ждут разбора пачкой: {n} – python3 coach.py sweep\n"
-              if n else "Здесь всё разобрано, пересматривать пока нечего.\n")
+        print(trl("Здесь разбирать нечего. Одиночных упоминаний ждут разбора пачкой: {0} – python3 coach.py sweep\n", n)
+              if n else trl("Здесь всё разобрано, пересматривать пока нечего.\n"))
         return False
     return True
 
@@ -935,8 +943,8 @@ def _start(conn: sqlite3.Connection, q: list[sqlite3.Row]) -> bool:
 def _left_line(conn: sqlite3.Connection, done: int, type_: str | None, area: str | None) -> None:
     left = len(queue(conn, type_, area))
     where = f" в области «{DOMAIN_TITLES.get(area, area)}»" if area else ""
-    print(f"Решений за этот раз: {done}. Ждут решения{where}: {left}." + ("" if area else
-          "  По областям: " + ", ".join(f"{a} – {n}" for a, n in area_counts(conn)[:6])) + "\n")
+    print(trl("Решений за этот раз: {0}. Ждут решения{1}: {2}.", done, where, left) + ("" if area else
+          trl("  По областям: ") + ", ".join(f"{a} – {n}" for a, n in area_counts(conn)[:6])) + "\n")
 
 
 def triage(conn: sqlite3.Connection, llm: Ollama, cfg: Config, limit: int = 10, type_: str | None = None,
@@ -945,8 +953,8 @@ def triage(conn: sqlite3.Connection, llm: Ollama, cfg: Config, limit: int = 10, 
     q = queue(conn, type_, area)
     if not _start(conn, q):
         return 0
-    print(f"Разбор накопленного: ждут решения {len(q)}" + (f" в области «{DOMAIN_TITLES.get(area, area)}»" if area else "")
-          + f". За раз – до {limit}. Отвечай своими словами или сразу буквой.\n" + SHORTCUT_HELP + "\n")
+    print(trl("Разбор накопленного: ждут решения {0}", len(q)) + (trl(" в области «{0}»", DOMAIN_TITLES.get(area, area)) if area else "")
+          + trl(". За раз – до {0}. Отвечай своими словами или сразу буквой.\n", limit) + SHORTCUT_HELP + "\n")
     done = 0
     for r in q[:limit]:
         r = conn.execute("SELECT * FROM lr_items WHERE id=?", (r["id"],)).fetchone()
@@ -961,11 +969,8 @@ def triage(conn: sqlite3.Connection, llm: Ollama, cfg: Config, limit: int = 10, 
 
 
 QUICK_PAGE = 10
-_QUICK = re.compile(r"(\d+)\s*([аикжпгохун?])", re.I)
-QUICK_HELP = ("Одной строкой: номер и буква, например «1а 2к 3о 5х» (а – активно, и – инкубатор, к – когда-нибудь, "
-              "ж – жду, п – передал, г – сделано, о – отпускаю, х – в архив, у – уточнить, н – не пункт). «4?» – открыть "
-              "пункт 4 карточкой (подумать, назвать причину, склеить). Неуказанное остаётся неразобранным. "
-              "Enter – дальше, «стоп» – закончить.")
+_QUICK = re.compile(r"(\d+)\s*([аикжпгохун?]|[aiswhdlxun])", re.I)
+QUICK_HELP = (trl("Одной строкой: номер и буква, например «1а 2к 3о 5х» (а – активно, и – инкубатор, к – когда-нибудь, ж – жду, п – передал, г – сделано, о – отпускаю, х – в архив, у – уточнить, н – не пункт). «4?» – открыть пункт 4 карточкой (подумать, назвать причину, склеить). Неуказанное остаётся неразобранным. Enter – дальше, «стоп» – закончить."))
 
 
 def parse_quick(text: str, n: int) -> list[tuple[int, str]] | None:
@@ -979,10 +984,10 @@ def parse_quick(text: str, n: int) -> list[tuple[int, str]] | None:
 def _quick_line(conn: sqlite3.Connection, i: int, r: sqlite3.Row) -> str:
     s = f"  {i:>2}. {r['title']} · {LR_TYPE_TITLES.get(r['type'], r['type'])}"
     if r["status"] != "inbox":
-        s += f" · сейчас: {LR_STATUS_TITLES[r['status']]}"
+        s += trl(" · сейчас: {0}", LR_STATUS_TITLES[r['status']])
     if r["resurfaced"]:
-        s += " · снова всплыло"
-    extra = span(r) if r["origin"] == "memory" else "из разговора"
+        s += trl(" · снова всплыло")
+    extra = span(r) if r["origin"] == "memory" else trl("из разговора")
     s += f"\n      {extra}"
     if r["summary"] and r["summary"].strip().rstrip(".") != r["title"].strip().rstrip(".").rstrip("…"):
         s += f" – {r['summary'][:140].strip().rstrip('.')}"
@@ -999,15 +1004,15 @@ def quick_triage(conn: sqlite3.Connection, llm: Ollama, cfg: Config, type_: str 
     q = queue(conn, type_, area)
     if not _start(conn, q):
         return 0
-    print(f"Быстрый разбор: ждут решения {len(q)}" + (f" в области «{DOMAIN_TITLES.get(area, area)}»" if area else "")
-          + f", по {page} на экране.\n" + QUICK_HELP + "\n")
+    print(trl("Быстрый разбор: ждут решения {0}", len(q)) + (trl(" в области «{0}»", DOMAIN_TITLES.get(area, area)) if area else "")
+          + trl(", по {0} на экране.\n", page) + QUICK_HELP + "\n")
     done = 0
     for start in range(0, len(q), page):
         part = [conn.execute("SELECT * FROM lr_items WHERE id=?", (r["id"],)).fetchone() for r in q[start:start + page]]
         part = [r for r in part if r is not None and r["merged_into"] is None]
         if not part:
             continue
-        print(f"– {start + 1}-{start + len(part)} из {len(q)} –")
+        print(trl("– {0}-{1} из {2} –", start + 1, start + len(part), len(q)))
         for i, r in enumerate(part, 1):
             print(_quick_line(conn, i, r))
         while True:
@@ -1018,7 +1023,7 @@ def quick_triage(conn: sqlite3.Connection, llm: Ollama, cfg: Config, type_: str 
             pairs = parse_quick(ans, len(part)) if ans else []
             if pairs is not None:
                 break
-            print(f"Не понял. Номера от 1 до {len(part)} с буквой: «1а 3о», «4?» – карточкой; Enter – дальше.")
+            print(trl("Не понял. Номера от 1 до {0} с буквой: «1а 3о», «4?» – карточкой; Enter – дальше.", len(part)))
         later = []
         for i, letter in pairs:
             r = conn.execute("SELECT * FROM lr_items WHERE id=?", (part[i - 1]["id"],)).fetchone()
@@ -1029,14 +1034,14 @@ def quick_triage(conn: sqlite3.Connection, llm: Ollama, cfg: Config, type_: str 
             step = None
             if status == "active":
                 if not _confirm_active(conn, r):
-                    print(f"{i}: не стал делать активным.")
+                    print(trl("{0}: не стал делать активным.", i))
                     continue
                 if r["type"] not in ("material", "experience"):
-                    step = _ask(f"{i}. «{r['title']}» – следующий конкретный шаг? (Enter – пропустить) ") or None
+                    step = _ask(trl("{0}. «{1}» – следующий конкретный шаг? (Enter – пропустить) ", i, r['title'])) or None
             decide(conn, r["id"], status, next_step=step)
             done += 1
         if pairs and not later:
-            print(f"Записал: {sum(1 for _i, l in pairs if l != '?')}.")
+            print(trl("Записал: {0}.", sum((1 for _i, l in pairs if l != '?'))))
         for r in later:
             print()
             res = _triage_one(conn, llm, r)
@@ -1085,14 +1090,14 @@ def print_list(conn: sqlite3.Connection, status: str | None = None) -> None:
                         " AND status!='dismissed'") + " ORDER BY status, type, title",
                         (status,) if status else ()).fetchall()
     if not rows:
-        print("Пусто.\n")
+        print(trl("Пусто.\n"))
         return
     cur = None
     for r in rows:
         if r["status"] != cur:
             cur = r["status"]
             print(f"\n{LR_STATUS_TITLES[cur].capitalize()}:")
-        extra = f", пересмотр {r['review_on']}" if r["review_on"] else ""
+        extra = trl(", пересмотр {0}", r['review_on']) if r["review_on"] else ""
         print(f"  {code(r['id'])} {r['title']} ({LR_TYPE_TITLES.get(r['type'], r['type'])}{extra})")
     print()
 
@@ -1124,21 +1129,16 @@ def plan(conn: sqlite3.Connection) -> dict[str, Any]:
 
 def print_plan(conn: sqlite3.Connection) -> None:
     p = plan(conn)
-    print(f"Групп-кандидатов в реестр: {p['groups']} (проектных заметок: {p['note_groups']}, тем из остальной памяти: "
-          f"{p['cluster_groups']}). Уже в реестре пунктов: {p['items']}.")
-    print(f"Моделью называются темы и проектные заметки: нужно {p['todo']} (уже названо раньше: {p['cached']}) – "
-          f"вызовов модели: {p['calls']}.")
+    print(trl("Групп-кандидатов в реестр: {0} (проектных заметок: {1}, тем из остальной памяти: {2}). Уже в реестре пунктов: {3}.", p['groups'], p['note_groups'], p['cluster_groups'], p['items']))
+    print(trl("Моделью называются темы и проектные заметки: нужно {0} (уже названо раньше: {1}) – вызовов модели: {2}.", p['todo'], p['cached'], p['calls']))
     if p["calls"]:
         if p["sec_per_batch"]:
-            print(f"Оценка по прошлой сборке: ~{fmt_duration(p['calls'] * p['sec_per_batch'])} "
-                  f"({p['sec_per_batch']:.0f} с на вызов).")
+            print(trl("Оценка по прошлой сборке: ~{0} ({1:.0f} с на вызов).", fmt_duration(p['calls'] * p['sec_per_batch']), p['sec_per_batch']))
         else:
-            print("Сколько займёт вызов, станет известно после первой сборки (ожидаю порядка минуты на вызов на "
-                  "видеокарте, на процессоре сервера – в несколько раз дольше; не замерено).")
-    print(f"Одиночные упоминания (один факт, одна заметка): {p['single']} – без модели, разбор пачкой списком "
-          f"(coach.py sweep); они из {p['single_notes']} заметок" + (f" и {p['single_chat']} из разговоров" if p["single_chat"] else "")
-          + f". Старше 3 лет: {p['single_3y']}, старше 5 лет: {p['single_5y']}, без даты: {p['single_undated']}.")
-    print("Здесь только числа, без содержимого заметок – их можно переслать.\n")
+            print(trl("Сколько займёт вызов, станет известно после первой сборки (ожидаю порядка минуты на вызов на видеокарте, на процессоре сервера – в несколько раз дольше; не замерено)."))
+    print(trl("Одиночные упоминания (один факт, одна заметка): {0} – без модели, разбор пачкой списком (coach.py sweep); они из {1} заметок", p['single'], p['single_notes']) + (trl(" и {0} из разговоров", p['single_chat']) if p["single_chat"] else "")
+          + trl(". Старше 3 лет: {0}, старше 5 лет: {1}, без даты: {2}.", p['single_3y'], p['single_5y'], p['single_undated']))
+    print(trl("Здесь только числа, без содержимого заметок – их можно переслать.\n"))
 
 
 # --- разбор пачкой -------------------------------------------------------------------------------
@@ -1213,7 +1213,7 @@ def rank_bulk(conn: sqlite3.Connection, llm: Ollama, cfg: Config, target: int = 
         by_dom.setdefault(r["domain"], []).append(r)
     quotas = _quotas({d: len(v) for d, v in by_dom.items()}, max(1, round(float(ratio) * len(rows))))
     calls = sum(math.ceil(len(v) / PICK_CHUNK) for d, v in by_dom.items() if quotas.get(d, 0) < len(v))
-    progress = Progress(calls, "отбор значимого, вызов") if calls and not quiet else None
+    progress = Progress(calls, trl("отбор значимого, вызов")) if calls and not quiet else None
     done = 0
     for dom, items in by_dom.items():
         q = quotas.get(dom, 0)
@@ -1230,13 +1230,13 @@ def rank_bulk(conn: sqlite3.Connection, llm: Ollama, cfg: Config, target: int = 
             ids = {f"S{j + 1}": r["id"] for j, r in enumerate(chunk)}
             chosen: list[int] = []
             if k:
-                user = (f"Область: {DOMAIN_TITLES.get(dom, dom)}. Выбери не больше {k}.\n\n"
+                user = (trl("Область: {0}. Выбери не больше {1}.\n\n", DOMAIN_TITLES.get(dom, dom), k)
                         + "\n".join(f"S{j + 1} | {(r['summary'] or r['title'])[:220]}" for j, r in enumerate(chunk)))
                 try:
                     raw = llm.chat_json(LR_PICK_SYSTEM.replace("{k}", str(k)), user, lr_pick_schema(k),
                                         num_predict=40 * k + 200, attempts=2, heavy=True)
                 except OllamaError as exc:
-                    warn(f"отбор прерван ({exc}); неразмеченное покажу целиком, повторный sweep доразметит.")
+                    warn(trl("отбор прерван ({0}); неразмеченное покажу целиком, повторный sweep доразметит.", exc))
                     return done
                 for sid in raw.get("chosen") or []:
                     iid = ids.get(str(sid).strip().upper())
@@ -1275,7 +1275,7 @@ def _pages(conn: sqlite3.Connection, rows: list[sqlite3.Row], page: int, stats: 
     total = len(rows)
     for start in range(0, total, page):
         part = rows[start:start + page]
-        print(f"– {start + 1}-{start + len(part)} из {total} –")
+        print(trl("– {0}-{1} из {2} –", start + 1, start + len(part), total))
         last = None
         for i, r in enumerate(part, 1):
             note = r["note_title"] or ("из разговоров" if not loads(r["paths_json"], []) else "заметка")
@@ -1289,13 +1289,13 @@ def _pages(conn: sqlite3.Connection, rows: list[sqlite3.Row], page: int, stats: 
             ans = _ask("> ")
             if ans is None or STOP.match(ans or ""):
                 return False
-            if ans.casefold() in ("все", "всё", "all"):
+            if ans.casefold() in ("все", "всё", "all", "everything"):
                 keep = set(range(1, len(part) + 1))
                 break
             keep = parse_numbers(ans, len(part)) if ans else set()
             if keep is not None:
                 break
-            print(f"Номера от 1 до {len(part)}, например «3 7» или «2-5»; Enter – живого нет.")
+            print(trl("Номера от 1 до {0}, например «3 7» или «2-5»; Enter – живого нет.", len(part)))
         now = iso_now()
         for i, r in enumerate(part, 1):
             if i in keep:
@@ -1305,7 +1305,7 @@ def _pages(conn: sqlite3.Connection, rows: list[sqlite3.Row], page: int, stats: 
                 decide(conn, r["id"], "archived", reason=SWEEP_REASON)
                 stats["archived"] += 1
         conn.commit()
-        print(f"Живым: {len(keep)}, в архив: {len(part) - len(keep)}.\n")
+        print(trl("Живым: {0}, в архив: {1}.\n", len(keep), len(part) - len(keep)))
     return True
 
 
@@ -1317,48 +1317,44 @@ def sweep(conn: sqlite3.Connection, llm: Ollama | None = None, cfg: Config | Non
     живое, идёт в обычный разбор; остальное на странице – в архив (вернуть – inventory reopen)."""
     stats = {"kept": 0, "archived": 0, "rest": 0}
     if not bulk_count(conn):
-        print("Разбирать пачкой нечего.\n")
+        print(trl("Разбирать пачкой нечего.\n"))
         return stats
     if llm is not None and cfg is not None:
         unranked = store.scalar(conn, "SELECT COUNT(*) FROM lr_items WHERE bulk=1 AND status='inbox' "
                                       "AND merged_into IS NULL AND bulk_rank IS NULL") or 0
         if unranked:
-            print(f"Модель отбирает самое значимое по областям жизни среди {unranked} одиночных упоминаний…")
+            print(trl("Модель отбирает самое значимое по областям жизни среди {0} одиночных упоминаний…", unranked))
             rank_bulk(conn, llm, cfg, target)
             print()
     chosen = _bulk_rows(conn, "i.bulk_rank IS NULL OR i.bulk_rank>0")
     rest = _bulk_rows(conn, "i.bulk_rank=0")
     ranked = bool(rest) or bool(store.get_meta(conn, "lr_pick_ratio"))
-    print(f"Разбор пачкой: {len(chosen)}" + (f" самых значимых по областям (ещё {len(rest)} модель сочла менее "
-                                             f"значимыми – о них в конце)" if ranked else " одиночных упоминаний")
-          + f", по {page} на странице.\n"
-          "Напиши номера того, что ещё живо и стоит разобрать подробно («3 7 15», «2-5»): оно пойдёт в обычный "
-          "разбор. Всё остальное на странице – в архив (не удаляется; вернуть – coach.py inventory reopen LR-N).\n"
-          "Enter – на этой странице живого нет, «все» – вся страница живая, «стоп» – закончить, эту страницу не трогая.\n")
+    print(trl("Разбор пачкой: {0}", len(chosen)) + (trl(" самых значимых по областям (ещё {0} модель сочла менее значимыми – о них в конце)", len(rest)) if ranked else trl(" одиночных упоминаний"))
+          + trl(", по {0} на странице.\n"
+                "Напиши номера того, что ещё живо и стоит разобрать подробно («3 7 15», «2-5»): оно пойдёт в обычный разбор. Всё остальное на странице – в архив (не удаляется; вернуть – coach.py inventory reopen LR-N).\n"
+                "Enter – на этой странице живого нет, «все» – вся страница живая, «стоп» – закончить, эту страницу не трогая.\n", page))
     if not _pages(conn, chosen, page, stats, by_area=ranked):
-        print(f"\nОстановился. Оставлено живым: {stats['kept']}, в архив: {stats['archived']}; "
-              f"осталось на разбор пачкой: {bulk_count(conn)}.\n")
+        print(trl("\nОстановился. Оставлено живым: {0}, в архив: {1}; осталось на разбор пачкой: {2}.\n", stats['kept'], stats['archived'], bulk_count(conn)))
         return stats
     if rest:
         areas = Counter(DOMAIN_TITLES.get(r["domain"], r["domain"]) for r in rest)
-        print(f"Остались {len(rest)}, которые модель сочла менее значимыми: "
+        print(trl("Остались {0}, которые модель сочла менее значимыми: ", len(rest))
               + ", ".join(f"{a} – {n}" for a, n in areas.most_common()) + ".")
-        ans = (_ask("«смотреть» – пролистать их так же, «архив» – все в архив одним решением, Enter – оставить на потом: ")
+        ans = (_ask(trl("«смотреть» – пролистать их так же, «архив» – все в архив одним решением, Enter – оставить на потом: "))
                or "").casefold()
-        if ans.startswith("смотр"):
+        if ans.startswith(("смотр", "look", "view", "show", "browse")):
             if not _pages(conn, rest, page, stats, by_area=True):
-                print(f"\nОстановился. Осталось на разбор пачкой: {bulk_count(conn)}.\n")
+                print(trl("\nОстановился. Осталось на разбор пачкой: {0}.\n", bulk_count(conn)))
                 return stats
-        elif ans.startswith("архив"):
+        elif ans.startswith(("архив", "archive")):
             for r in rest:
                 decide(conn, r["id"], "archived", reason=SWEEP_REASON, answer=REST_ANSWER)
             stats["archived"] += len(rest)
             stats["rest"] = len(rest)
-            print(f"В архив: {len(rest)}. Вернуть любой – coach.py inventory reopen LR-N "
-                  "(список – inventory list --status archived).\n")
+            print(trl("В архив: {0}. Вернуть любой – coach.py inventory reopen LR-N (список – inventory list --status archived).\n", len(rest)))
         else:
-            print(f"Оставил: {len(rest)} ждут, вернуться – coach.py sweep.\n")
-    print(f"Живым оставлено {stats['kept']} – они в обычном разборе: python3 coach.py triage\n")
+            print(trl("Оставил: {0} ждут, вернуться – coach.py sweep.\n", len(rest)))
+    print(trl("Живым оставлено {0} – они в обычном разборе: python3 coach.py triage\n", stats['kept']))
     return stats
 
 
@@ -1371,5 +1367,5 @@ def reopen(conn: sqlite3.Connection, ref: str) -> int | None:
     iid = _resolve(conn, int(m.group(1)))
     if not store.scalar(conn, "SELECT 1 FROM lr_items WHERE id=?", (iid,)):
         return None
-    decide(conn, iid, "inbox", reason="открыто снова вручную")
+    decide(conn, iid, "inbox", reason=trl("открыто снова вручную"))
     return iid

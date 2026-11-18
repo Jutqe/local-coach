@@ -12,8 +12,9 @@ from typing import Any
 
 from . import guard, store
 from .util import iso_now, loads, normalize_time_ref, today
+from .i18n import trl
 
-STATUS_TITLES = {"open": "открыта", "done": "сделано", "dropped": "брошено"}
+STATUS_TITLES = {"open": trl("открыта"), "done": trl("сделано"), "dropped": trl("брошено")}
 
 
 def _stems(text: str) -> set[str]:
@@ -77,9 +78,9 @@ def migrate_legacy(conn: sqlite3.Connection) -> int:
 
 
 def _when(r: sqlite3.Row) -> str:
-    parts = [f"с {r['created_at'][:10]}"]
+    parts = [trl("с {0}", r['created_at'][:10])]
     if r["due"]:
-        parts.append(f"срок {r['due']}" + (" — просрочено" if r["due"] < today() else ""))
+        parts.append(trl("срок {0}", r['due']) + (trl(" — просрочено") if r["due"] < today() else ""))
     return ", ".join(parts)
 
 
@@ -107,11 +108,11 @@ def apply_session(conn: sqlite3.Connection, session_id: int, raw: dict[str, Any]
             shown.append(f"{STATUS_TITLES[u['status']]}: {text}")
         elif u.get("status") == "progress":
             set_status(conn, cid, "open", note)
-            shown.append(f"продвинулось: {text}" + (f" ({note})" if note else ""))
+            shown.append(trl("продвинулось: {0}", text) + (f" ({note})" if note else ""))
     for c in raw.get("commitments") or []:
         if isinstance(c, dict) and add(conn, session_id, str(c.get("text") or ""), str(c.get("due") or "")):
             due = normalize_time_ref(str(c.get("due") or ""))
-            shown.append(f"новая: {c['text'].strip()}" + (f" (срок {due})" if due else ""))
+            shown.append(trl("новая: {0}", c['text'].strip()) + (trl(" (срок {0})", due) if due else ""))
     conn.commit()
     return shown
 
@@ -125,14 +126,14 @@ def coach_block(conn: sqlite3.Connection, open_limit: int = 6, history_limit: in
         return ""
     out = []
     if rows:
-        out.append("ОТКРЫТЫЕ ДОГОВОРЁННОСТИ (спроси об одной, если к месту):\n"
-                   + "\n".join(f"- {r['text']} ({_when(r)})" + (f"; заметки: {r['note']}" if r["note"] else "")
+        out.append(trl("ОТКРЫТЫЕ ДОГОВОРЁННОСТИ (спроси об одной, если к месту):\n")
+                   + "\n".join(f"- {r['text']} ({_when(r)})" + (trl("; заметки: {0}", r['note']) if r["note"] else "")
                                for r in rows[:open_limit]))
     if closed:
         done = sum(r["status"] == "done" for r in closed)
         lines = [f"- {'✓' if r['status'] == 'done' else '✗'} {r['text']} ({r['updated_at'][:10]})"
                  + (f": {r['note'][-150:]}" if r["note"] else "") for r in closed[:history_limit]]
-        out.append(f"ИСТОРИЯ ДОГОВОРЁННОСТЕЙ: выполнено {done} из {len(closed)} закрытых. Последние:\n" + "\n".join(lines))
+        out.append(trl("ИСТОРИЯ ДОГОВОРЁННОСТЕЙ: выполнено {0} из {1} закрытых. Последние:\n", done, len(closed)) + "\n".join(lines))
     return "\n\n".join(out)
 
 
@@ -147,16 +148,16 @@ def manage(conn: sqlite3.Connection) -> None:
         closed = conn.execute("SELECT text, status, updated_at FROM commitments WHERE status!='open' "
                               "ORDER BY updated_at DESC LIMIT 5").fetchall()
         if rows:
-            print("Открытые договорённости:")
+            print(trl("Открытые договорённости:"))
             for i, r in enumerate(rows, 1):
                 print(f"  {i}. {r['text']} ({_when(r)})" + (f"\n     {r['note']}" if r["note"] else ""))
         else:
-            print("Открытых договорённостей нет.")
+            print(trl("Открытых договорённостей нет."))
         if closed:
-            print("Недавно закрытые:")
+            print(trl("Недавно закрытые:"))
             for r in closed:
                 print(f"  {'✓' if r['status'] == 'done' else '✗'} {r['text']} ({r['updated_at'][:10]})")
-        print("\n«2 с» — сделано, «2 б» — брошено, «+ текст [до 2026-11-01]» — добавить, Enter — выйти.")
+        print(trl("\n«2 с» — сделано, «2 б» — брошено, «+ текст [до 2026-11-01]» — добавить, Enter — выйти."))
         try:
             ans = input("> ").strip()
         except (EOFError, KeyboardInterrupt):
@@ -166,19 +167,19 @@ def manage(conn: sqlite3.Connection) -> None:
             print()
             return
         if ans.startswith("+"):
-            m = re.search(r"\s+до\s+(\S+)\s*$", ans)
+            m = re.search(r"\s+(?:до|until|by|due)\s+(\S+)\s*$", ans)
             text = ans[1:m.start()] if m else ans[1:]
             if add(conn, None, text, m.group(1) if m else None):
                 conn.commit()
-                print("Добавлено.\n")
+                print(trl("Добавлено.\n"))
             else:
-                print("Не добавил: такая уже есть (или текст слишком короткий).\n")
+                print(trl("Не добавил: такая уже есть (или текст слишком короткий).\n"))
             continue
-        m = re.fullmatch(r"(\d+)\s*([сбСБ])\s*(.*)", ans)
+        m = re.fullmatch(r"(\d+)\s*([сбСБdDxX])\s*(.*)", ans)
         if not m or not 1 <= int(m.group(1)) <= len(rows):
-            print("Не понял. Пример: «2 с» или «+ позвонить врачу до 2026-11-01».\n")
+            print(trl("Не понял. Пример: «2 с» или «+ позвонить врачу до 2026-11-01».\n"))
             continue
-        set_status(conn, rows[int(m.group(1)) - 1]["id"], "done" if m.group(2).casefold() == "с" else "dropped",
+        set_status(conn, rows[int(m.group(1)) - 1]["id"], "done" if m.group(2).casefold() in ("с", "d") else "dropped",
                    m.group(3).strip())
         conn.commit()
         print()

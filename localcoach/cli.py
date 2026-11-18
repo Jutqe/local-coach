@@ -15,6 +15,7 @@ from . import VERSION, extract, guard, people, report, store, synth, timeline, v
 from .config import Config
 from .ollama import Ollama, OllamaError, answers, check_local_url, is_cloud, port_candidates
 from .util import fmt_duration, iso_now
+from .i18n import trl
 
 
 def build_config(args: argparse.Namespace) -> Config:
@@ -45,7 +46,7 @@ def update_lock(cfg: Config):
         fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         fh.close()
-        raise SystemExit("Другое обновление памяти уже идёт (или завис прошлый запуск). Дождись его окончания.")
+        raise SystemExit(trl("Другое обновление памяти уже идёт (или завис прошлый запуск). Дождись его окончания."))
     try:
         fh.write(str(os.getpid()))
         fh.flush()
@@ -58,7 +59,7 @@ def update_lock(cfg: Config):
 def _reach(cfg: Config) -> tuple[Ollama, dict]:
     why = check_local_url(cfg.ollama)
     if why:
-        raise SystemExit(f"Адрес Ollama отклонён: {why}. Заметки отправляются только на локальный сервер.")
+        raise SystemExit(trl("Адрес Ollama отклонён: {0}. Заметки отправляются только на локальный сервер.", why))
     llm = Ollama(cfg)
     return llm, llm.models()
 
@@ -117,54 +118,50 @@ def connect_llm(cfg: Config, need_embed: bool = True, fallback: bool = False) ->
             try:
                 llm, names = _reach(cfg)
                 _remember_port(cfg, other)
-                print(f"Ollama на {configured} не ответил — нашёл его на {other} и запомнил.")
+                print(trl("Ollama на {0} не ответил — нашёл его на {1} и запомнил.", configured, other))
                 exc = None
             except (OllamaError, OSError):
                 cfg.ollama = configured
     if exc is not None:
         primary = cfg.ollama
         if not spare or spare == primary.rstrip("/"):
-            raise SystemExit(f"Ollama недоступен по адресу {primary}: {exc}. Включи ПК и проверь, что Ollama запущен.")
+            raise SystemExit(trl("Ollama недоступен по адресу {0}: {1}. Включи ПК и проверь, что Ollama запущен.", primary, exc))
         if not fallback:
-            raise SystemExit(f"Ollama недоступен по адресу {primary}: {exc}. Включи ПК и проверь, что Ollama запущен. "
-                             "Без ПК работают chat, checkin, review и forget — на модели сервера.")
+            raise SystemExit(trl("Ollama недоступен по адресу {0}: {1}. Включи ПК и проверь, что Ollama запущен. Без ПК работают chat, checkin, review и forget — на модели сервера.", primary, exc))
         cfg.ollama = spare
         try:
             llm, names = _reach(cfg)
         except (OllamaError, OSError) as exc2:
-            raise SystemExit(f"Ollama недоступен ни на ПК ({primary}: {exc}), ни на сервере ({spare}: {exc2}).")
+            raise SystemExit(trl("Ollama недоступен ни на ПК ({0}: {1}), ни на сервере ({2}: {3}).", primary, exc, spare, exc2))
         cfg.on_fallback = True
         cfg.think_chat = False
         cfg.chat_budget_chars = min(cfg.chat_budget_chars, cfg.fallback_chat_budget)
-        print(f"ПК недоступен — работаю на модели сервера ({spare}, процессор): первый ответ через 2–3 минуты, "
-              "дальше быстрее, текст идёт по мере генерации.")
+        print(trl("ПК недоступен — работаю на модели сервера ({0}, процессор): первый ответ через 2–3 минуты, дальше быстрее, текст идёт по мере генерации.", spare))
 
     def pick(wanted: str, role: str) -> str | None:
         name = llm.resolve(wanted, names)
         if name and llm.is_remote(name, names[name]):
-            raise SystemExit(f"{role} {name} — облачная: запросы уйдут на ollama.com. "
-                             "Укажи локальную модель из ollama list.")
+            raise SystemExit(trl("{0} {1} — облачная: запросы уйдут на ollama.com. Укажи локальную модель из ollama list.", role, name))
         return name
 
     local = ", ".join(n for n in names if not is_cloud(n, names[n]))
-    model = pick(cfg.model, "Модель")
+    model = pick(cfg.model, trl("Модель"))
     if not model:
-        raise SystemExit(f"Модели {cfg.model} нет в Ollama {cfg.ollama} (нужно точное имя). Есть: {local}. "
-                         "Скрипт модели не скачивает.")
+        raise SystemExit(trl("Модели {0} нет в Ollama {1} (нужно точное имя). Есть: {2}. Скрипт модели не скачивает.", cfg.model, cfg.ollama, local))
     cfg.model = model
     if cfg.heavy_model:
-        heavy = pick(cfg.heavy_model, "Тяжёлая модель")
+        heavy = pick(cfg.heavy_model, trl("Тяжёлая модель"))
         if not heavy and not cfg.on_fallback:      # на запасном Ollama тяжёлой нет и не будет: тихо работаем на model
-            print(f"Тяжёлая модель {cfg.heavy_model} не найдена – всё на {cfg.model}.")
+            print(trl("Тяжёлая модель {0} не найдена – всё на {1}.", cfg.heavy_model, cfg.model))
         cfg.heavy_model = heavy or ""
     if cfg.synth_model:
-        synth = pick(cfg.synth_model, "Модель синтеза")
+        synth = pick(cfg.synth_model, trl("Модель синтеза"))
         if not synth:
-            print(f"Модель синтеза {cfg.synth_model} не найдена — синтез на {cfg.model}.")
+            print(trl("Модель синтеза {0} не найдена — синтез на {1}.", cfg.synth_model, cfg.model))
         cfg.synth_model = synth or ""
-    emb = pick(cfg.embed_model, "Эмбеддинг-модель")
+    emb = pick(cfg.embed_model, trl("Эмбеддинг-модель"))
     if not emb and need_embed:
-        raise SystemExit(f"Эмбеддинг-модель {cfg.embed_model} не найдена в {cfg.ollama}. Установи: ollama pull embeddinggemma")
+        raise SystemExit(trl("Эмбеддинг-модель {0} не найдена в {1}. Установи: ollama pull embeddinggemma", cfg.embed_model, cfg.ollama))
     if emb:
         cfg.embed_model = emb
     return llm
@@ -173,12 +170,12 @@ def connect_llm(cfg: Config, need_embed: bool = True, fallback: bool = False) ->
 def header(cfg: Config) -> None:
     print(f"Local Coach v{VERSION}")
     if cfg.vault:
-        print(f"Vault (только чтение): {cfg.vault}")
-    print(f"Рабочая папка:          {cfg.workspace}")
-    print(f"Ollama:                 {cfg.ollama} — {cfg.model}, векторы: {cfg.embed_model}"
-          + (f", тяжёлая: {cfg.heavy_model}" if cfg.heavy_model else "")
-          + (f", синтез: {cfg.synth_model}" if cfg.synth_model else ""))
-    print(f"Контекст:               {cfg.num_ctx} токенов, numpy: {'есть' if vectors.np is not None else 'нет (медленнее)'}")
+        print(trl("Vault (только чтение): {0}", cfg.vault))
+    print(trl("Рабочая папка:          {0}", cfg.workspace))
+    print(trl("Ollama:                 {0} — {1}, векторы: {2}", cfg.ollama, cfg.model, cfg.embed_model)
+          + (trl(", тяжёлая: {0}", cfg.heavy_model) if cfg.heavy_model else "")
+          + (trl(", синтез: {0}", cfg.synth_model) if cfg.synth_model else ""))
+    print(trl("Контекст:               {0} токенов, numpy: {1}", cfg.num_ctx, trl("есть") if vectors.np is not None else trl("нет (медленнее)")))
     print()
 
 
@@ -190,15 +187,14 @@ def scan(cfg: Config) -> list[vault.Note]:
     sources = {}
     for n in notes:
         sources[n.date_source] = sources.get(n.date_source, 0) + 1
-    print(f"Заметок: {len(notes)}, объём {sum(n.size for n in notes) / 1048576:.1f} МБ, фрагментов: {chunks} "
-          f"(прочитано за {fmt_duration(time.monotonic() - t)})")
-    print(f"Отложено фильтром секретов: {held} — их текст модели не отправляется")
-    print("Даты заметок: " + ", ".join(f"{_DATE_NAMES.get(k, k)} {v}" for k, v in sorted(sources.items())))
+    print(trl("Заметок: {0}, объём {1:.1f} МБ, фрагментов: {2} (прочитано за {3})", len(notes), sum((n.size for n in notes)) / 1048576, chunks, fmt_duration(time.monotonic() - t)))
+    print(trl("Отложено фильтром секретов: {0} — их текст модели не отправляется", held))
+    print(trl("Даты заметок: ") + ", ".join(f"{_DATE_NAMES.get(k, k)} {v}" for k, v in sorted(sources.items())))
     return notes
 
 
-_DATE_NAMES = {"frontmatter": "из шапки", "filename": "из имени файла", "mtime": "по mtime",
-               "mtime_bulk": "неизвестна (массовый mtime)", "import": "импорт (дата из текста)"}
+_DATE_NAMES = {"frontmatter": trl("из шапки"), "filename": trl("из имени файла"), "mtime": trl("по mtime"),
+               "mtime_bulk": trl("неизвестна (массовый mtime)"), "import": trl("импорт (дата из текста)")}
 
 
 # --- команды ------------------------------------------------------------------------
@@ -208,80 +204,75 @@ def run_pipeline(cfg: Config, llm: Ollama, *, synth_stage: bool = True, import_v
     started = time.monotonic()
     notes = scan(cfg)
     if not notes:
-        raise SystemExit("В vault нет Markdown-заметок.")
+        raise SystemExit(trl("В vault нет Markdown-заметок."))
     conn = store.connect(cfg.db_path)
     try:
-        print("\n1/8 Синхронизация с vault")
+        print(trl("\n1/8 Синхронизация с vault"))
         s = extract.sync_notes(conn, notes, cfg)
-        print(f"  новых заметок {s['new']}, изменённых {s['changed']}, удалённых {s['stale']}, отложено {s['held']}; "
-              f"фрагменты: новых {s['chunks_new']}, без изменений {s['chunks_reused']}, убрано {s['chunks_dropped']}")
+        print(trl("  новых заметок {0}, изменённых {1}, удалённых {2}, отложено {3}; фрагменты: новых {4}, без изменений {5}, убрано {6}", s['new'], s['changed'], s['stale'], s['held'], s['chunks_new'], s['chunks_reused'], s['chunks_dropped']))
         if import_v3:
             path = Path(import_v3).expanduser()
             if not path.exists():
-                raise SystemExit(f"База v3 не найдена: {path}")
+                raise SystemExit(trl("База v3 не найдена: {0}", path))
             st = extract.import_v3(conn, path, notes, cfg)
-            print(f"  импорт v3: заметок {st['notes']}, фактов {st['facts']}; пропущено изменённых "
-                  f"{st['skipped_changed']}, недоделанных в v3 {st['skipped_incomplete']}")
+            print(trl("  импорт v3: заметок {0}, фактов {1}; пропущено изменённых {2}, недоделанных в v3 {3}", st['notes'], st['facts'], st['skipped_changed'], st['skipped_incomplete']))
 
         resplit = extract.resplit_saturated(conn, cfg)
         if resplit:
-            print(f"  упёрлись в потолок фактов: {resplit} фрагм. — будут разобраны заново по частям (один раз)")
+            print(trl("  упёрлись в потолок фактов: {0} фрагм. — будут разобраны заново по частям (один раз)", resplit))
         flagged = extract.refresh_project_flags(conn, cfg)
         if flagged:
-            print(f"  пометка «проект» обновлена у {flagged} фактов (папки проектов и идей — не хронология)")
+            print(trl("  пометка «проект» обновлена у {0} фактов (папки проектов и идей — не хронология)", flagged))
         repaired = extract.repair_dates(conn)
         if repaired:
-            print(f"  снято дат, которых нет в тексте (дата изменения файла, число вроде «2000 оборотов»): {repaired}")
+            print(trl("  снято дат, которых нет в тексте (дата изменения файла, число вроде «2000 оборотов»): {0}", repaired))
         chrono = timeline.chronology_paths(conn)
         if chrono:
-            print(f"  дневников и хронологий в vault: {len(chrono)} — их даты станут опорой наравне с биографией")
+            print(trl("  дневников и хронологий в vault: {0} — их даты станут опорой наравне с биографией", len(chrono)))
 
-        print("\n2/8 Извлечение фактов")
+        print(trl("\n2/8 Извлечение фактов"))
         ok, failed = extract.extract_pending(conn, llm, cfg)
         if ok or failed:
-            print(f"  готово {ok}, ошибок {failed}")
+            print(trl("  готово {0}, ошибок {1}", ok, failed))
 
-        print("\n3/8 Векторы")
+        print(trl("\n3/8 Векторы"))
         vectors.ensure_embed_identity(conn, cfg)
         vec_ok = vectors.embed_missing(conn, llm, cfg)
         marks = vectors.apply_user_marks(conn, cfg)
         if marks["rejected"] or marks["confirmed"]:
-            print(f"  по твоим прошлым решениям: отвергнуто {marks['rejected']}, подтверждено {marks['confirmed']}")
+            print(trl("  по твоим прошлым решениям: отвергнуто {0}, подтверждено {1}", marks['rejected'], marks['confirmed']))
 
-        print("\n4/8 Склейка похожих фактов")
+        print(trl("\n4/8 Склейка похожих фактов"))
         cs = vectors.update_clusters(conn, cfg)
-        print(f"  присоединено {cs['assigned']}, новых кластеров {cs['created']}, пересчитано {cs['touched']}, "
-              f"удалено пустых {cs['removed']}")
+        print(trl("  присоединено {0}, новых кластеров {1}, пересчитано {2}, удалено пустых {3}", cs['assigned'], cs['created'], cs['touched'], cs['removed']))
 
-        print("\n5/8 Актуальность: что верно сейчас, что в прошлом")
+        print(trl("\n5/8 Актуальность: что верно сейчас, что в прошлом"))
         tl = timeline.update_currency(conn, llm if vec_ok else None, cfg)
         c = tl["counts"]
-        print(f"  сейчас {c.get('current', 0)}, в прошлом {c.get('past', 0)}, события {c.get('history', 0)}, "
-              f"не проверено {c.get('unknown', 0)}")
+        print(trl("  сейчас {0}, в прошлом {1}, события {2}, не проверено {3}", c.get('current', 0), c.get('past', 0), c.get('history', 0), c.get('unknown', 0)))
         if not tl["timeline"]:
-            print("  биографии нет — сверять не с чем (её можно добавить: python3 coach.py import файл)")
+            print(trl("  биографии нет — сверять не с чем (её можно добавить: python3 coach.py import файл)"))
         elif tl["resolved"].get("past") or tl["resolved"].get("current"):
-            print(f"  сверено с биографией и твоими ответами: в прошлом {tl['resolved']['past']}, "
-                  f"актуально {tl['resolved']['current']}")
+            print(trl("  сверено с биографией и твоими ответами: в прошлом {0}, актуально {1}", tl['resolved']['past'], tl['resolved']['current']))
         if tl["questions"]:
-            print(f"  вопросов к тебе: {tl['questions']} — python3 coach.py calibrate (или /calibrate в чате)")
+            print(trl("  вопросов к тебе: {0} — python3 coach.py calibrate (или /calibrate в чате)", tl['questions']))
 
-        print("\n6/8 Люди: кто упоминается в заметках")
+        print(trl("\n6/8 Люди: кто упоминается в заметках"))
         ps = people.update(conn, llm if vec_ok else None, cfg)
         pc = people.counts(conn)
-        print(f"  просмотрено фактов {ps['facts']}; людей {pc['people']}, из них уточнено тобой {pc['known']}")
+        print(trl("  просмотрено фактов {0}; людей {1}, из них уточнено тобой {2}", ps['facts'], pc['people'], pc['known']))
         if pc["questions"]:
-            print(f"  вопросов про людей: {pc['questions']} — python3 coach.py people (или /people в чате)")
+            print(trl("  вопросов про людей: {0} — python3 coach.py people (или /people в чате)", pc['questions']))
 
         domains: dict = {}
         profile = None
         if not synth_stage:
-            print("\n7/8 Синтез пропущен — профиль обновится при следующем update")
+            print(trl("\n7/8 Синтез пропущен — профиль обновится при следующем update"))
             profile = store.cache_any(conn, "profile", "final")
         elif not vec_ok:
-            print("\n7/8 Синтез пропущен: векторы не готовы, повтори запуск, когда эмбеддинг-модель доступна")
+            print(trl("\n7/8 Синтез пропущен: векторы не готовы, повтори запуск, когда эмбеддинг-модель доступна"))
         else:
-            print("\n7/8 Обзоры областей, профиль, аудит")
+            print(trl("\n7/8 Обзоры областей, профиль, аудит"))
             domains, profile = rebuild_profile(conn, llm, cfg)
         if not domains:
             domains = {r["key"]: store.loads(r["payload_json"], {}) for r in
@@ -294,13 +285,12 @@ def run_pipeline(cfg: Config, llm: Ollama, *, synth_stage: bool = True, import_v
             try:
                 st = inventory.build(conn, llm, cfg, quiet=True)
                 hy = hypotheses.build(conn, llm, cfg, quiet=True)
-                print(f"\n  Life Reset: новых пунктов в реестре {st['new']}, снова всплыло {st['resurfaced']}, "
-                      f"новых гипотез {hy['new']}")
+                print(trl("\n  Life Reset: новых пунктов в реестре {0}, снова всплыло {1}, новых гипотез {2}", st['new'], st['resurfaced'], hy['new']))
                 lifereset.export(conn, cfg, quiet=True)
             except OllamaError as exc:
-                print(f"\n  Life Reset: реестр не обновлён ({exc}); обновится в следующий раз")
+                print(trl("\n  Life Reset: реестр не обновлён ({0}); обновится в следующий раз", exc))
 
-        print("\n8/8 Файлы памяти")
+        print(trl("\n8/8 Файлы памяти"))
         store.set_meta(conn, "last_update", iso_now())
         conn.commit()
         report.write_all(conn, cfg, domains, profile)
@@ -308,10 +298,10 @@ def run_pipeline(cfg: Config, llm: Ollama, *, synth_stage: bool = True, import_v
         print()
         for line in report.status_lines(conn):
             print("  " + line)
-        print(f"\nГотово за {fmt_duration(time.monotonic() - started)}. Профиль: {cfg.memory_dir / 'profile.md'}")
+        print(trl("\nГотово за {0}. Профиль: {1}", fmt_duration(time.monotonic() - started), cfg.memory_dir / 'profile.md'))
         left = store.scalar(conn, "SELECT COUNT(*) FROM chunks WHERE status IN ('pending','error')") or 0
         if left:
-            print(f"Не извлечено фрагментов: {left} — повторный запуск продолжит с места остановки.")
+            print(trl("Не извлечено фрагментов: {0} — повторный запуск продолжит с места остановки.", left))
         return left
     finally:
         conn.close()
@@ -328,7 +318,7 @@ def cmd_update(cfg: Config, args: argparse.Namespace) -> int:
     llm = connect_llm(cfg)
     with update_lock(cfg):
         left = run_pipeline(cfg, llm, synth_stage=not args.skip_synth, import_v3=args.import_v3)
-    print("Разговор: python3 coach.py chat")
+    print(trl("Разговор: python3 coach.py chat"))
     return 0 if not left else 2
 
 
@@ -340,16 +330,13 @@ def import_and_ingest(cfg: Config, llm: Ollama, files: list[str]) -> int:
         try:
             target = import_file(cfg, Path(f).expanduser())
         except PermissionError:
-            print(f"Не удалось импортировать {f}: нет доступа на чтение. Если файл на сетевой шаре, "
-                  "проверь на ПК: файл не открыт в Excel/Word, не зашифрован (Свойства → Другие → "
-                  "«Шифровать содержимое»), не хранится только в облаке OneDrive и имеет право «Чтение» "
-                  "в «Безопасности». Или скопируй файл на сервер.")
+            print(trl("Не удалось импортировать {0}: нет доступа на чтение. Если файл на сетевой шаре, проверь на ПК: файл не открыт в Excel/Word, не зашифрован (Свойства → Другие → «Шифровать содержимое»), не хранится только в облаке OneDrive и имеет право «Чтение» в «Безопасности». Или скопируй файл на сервер.", f))
             continue
         except (ValueError, OSError, KeyError) as exc:
             # KeyError — повреждённый или не тот zip внутри .xlsx/.docx
-            print(f"Не удалось импортировать {f}: {exc}")
+            print(trl("Не удалось импортировать {0}: {1}", f, exc))
             continue
-        print(f"Импортировано: {f} → {target}")
+        print(trl("Импортировано: {0} → {1}", f, target))
         done += 1
     if done:
         with update_lock(cfg):
@@ -361,7 +348,7 @@ def cmd_import(cfg: Config, args: argparse.Namespace) -> int:
     header(cfg)
     done = import_and_ingest(cfg, connect_llm(cfg), args.files)
     if done:
-        print("Факты из файла уже доступны в разговоре. Профиль учтёт их при следующем python3 coach.py update.")
+        print(trl("Факты из файла уже доступны в разговоре. Профиль учтёт их при следующем python3 coach.py update."))
     return 0 if done else 2
 
 
@@ -379,13 +366,12 @@ def cmd_plan(cfg: Config, args: argparse.Namespace) -> int:
         resplit_keys = {r["sha256"] for r in resplit}
         dense = [c for n in notes for c in n.chunks if extract.chunk_key(n, c) in resplit_keys]
         pending = [c for c in pending if c not in dense]
-        print(f"Фрагментов потребуется извлечь: {len(pending) + len(dense)} (остальные уже в базе)")
+        print(trl("Фрагментов потребуется извлечь: {0} (остальные уже в базе)", len(pending) + len(dense)))
         if dense:
-            print(f"  из них упёрлись в потолок фактов и будут разобраны по частям: {len(dense)} "
-                  "(каждый — от 3 вызовов модели)")
+            print(trl("  из них упёрлись в потолок фактов и будут разобраны по частям: {0} (каждый — от 3 вызовов модели)", len(dense)))
     else:
         pending, dense = [c for n in notes for c in n.chunks], []
-        print(f"База ещё не создана: извлекать придётся все {len(pending)} фрагментов.")
+        print(trl("База ещё не создана: извлекать придётся все {0} фрагментов.", len(pending)))
     todo = len(pending) + len(dense)
     chars = sum(len(c.text) + extract.CALL_OVERHEAD_CHARS for c in pending)
     # Плотный фрагмент: целиком, затем две половины (≈ ещё один объём), часто и четверти.
@@ -399,19 +385,18 @@ def cmd_plan(cfg: Config, args: argparse.Namespace) -> int:
     if per_kchar:
         lo, hi = per_kchar * (chars + dense_lo) / 1000, per_kchar * (chars + dense_hi) / 1000
         span = f"~{fmt_duration(lo)}" if fmt_duration(lo) == fmt_duration(hi) else f"~{fmt_duration(lo)} – {fmt_duration(hi)}"
-        print(f"Оценка по прошлому запуску: {span}")
+        print(trl("Оценка по прошлому запуску: {0}", span))
     elif rate:
-        print(f"Оценка по прошлому запуску: ~{fmt_duration(rate * (len(pending) + 3 * len(dense)))} "
-              f"({rate:.0f} с на фрагмент)")
+        print(trl("Оценка по прошлому запуску: ~{0} ({1:.0f} с на фрагмент)", fmt_duration(rate * (len(pending) + 3 * len(dense))), rate))
     else:
-        print("Скорость ещё не измерена: первый запуск покажет оценку после нескольких фрагментов.")
-    print("\nПлановый режим: модель не вызывалась, база не менялась.")
+        print(trl("Скорость ещё не измерена: первый запуск покажет оценку после нескольких фрагментов."))
+    print(trl("\nПлановый режим: модель не вызывалась, база не менялась."))
     return 0
 
 
 def cmd_status(cfg: Config, args: argparse.Namespace) -> int:
     if not cfg.db_path.exists():
-        print(f"База ещё не создана: {cfg.db_path}")
+        print(trl("База ещё не создана: {0}", cfg.db_path))
         return 1
     conn = store.connect(cfg.db_path)
     for line in report.status_lines(conn):
@@ -419,7 +404,7 @@ def cmd_status(cfg: Config, args: argparse.Namespace) -> int:
     errors = conn.execute("SELECT error, COUNT(*) AS n FROM chunks WHERE status='error' GROUP BY error "
                           "ORDER BY n DESC LIMIT 5").fetchall()
     if errors:
-        print("Частые ошибки извлечения (без содержимого заметок):")
+        print(trl("Частые ошибки извлечения (без содержимого заметок):"))
         for e in errors:
             print(f"  {e['n']} × {e['error']}")
     conn.close()
@@ -429,7 +414,7 @@ def cmd_status(cfg: Config, args: argparse.Namespace) -> int:
 def cmd_bio(cfg: Config, args: argparse.Namespace) -> int:
     from . import history
     if not cfg.db_path.exists():
-        print(f"База ещё не создана: {cfg.db_path}")
+        print(trl("База ещё не создана: {0}", cfg.db_path))
         return 1
     conn = store.connect(cfg.db_path)
     print(history.show(conn, " ".join(args.period), full=args.all))
@@ -444,7 +429,7 @@ def cmd_chat(cfg: Config, args: argparse.Namespace) -> int:
 
 def _lr_conn(cfg: Config) -> sqlite3.Connection | None:
     if not cfg.db_path.exists():
-        print("База ещё не построена. Сначала: python3 coach.py update")
+        print(trl("База ещё не построена. Сначала: python3 coach.py update"))
         return None
     return store.connect(cfg.db_path)
 
@@ -463,31 +448,29 @@ def cmd_inventory(cfg: Config, args: argparse.Namespace) -> int:
             return 0
         if args.action == "dedupe":
             n = inventory.dedupe(conn)
-            print(f"Склеено пунктов с одинаковым названием: {n}." if n else "Одинаковых названий среди пунктов нет.")
+            print(trl("Склеено пунктов с одинаковым названием: {0}.", n) if n else trl("Одинаковых названий среди пунктов нет."))
             if n:
-                print("Источники и цитаты перешли в оставшийся пункт; склеенные скрыты, не удалены.")
+                print(trl("Источники и цитаты перешли в оставшийся пункт; склеенные скрыты, не удалены."))
                 lifereset.export(conn, cfg)
             print()
             return 0
         if args.action == "reopen":
             iid = inventory.reopen(conn, args.ref or "")
-            print(f"{inventory.code(iid)} снова «не разобрано» – он в очереди разбора.\n" if iid
-                  else "Укажи пункт: inventory reopen LR-12\n")
+            print(trl("{0} снова «не разобрано» – он в очереди разбора.\n", inventory.code(iid)) if iid
+                  else trl("Укажи пункт: inventory reopen LR-12\n"))
             if iid:
                 lifereset.export(conn, cfg)
             return 0
         llm = connect_llm(cfg, fallback=True)
         if cfg.on_fallback:
-            print("ПК выключен: сборка пойдёт на процессоре сервера и займёт заметно дольше. Прервать можно в любой "
-                  "момент (Ctrl+C) – готовое сохранится.")
+            print(trl("ПК выключен: сборка пойдёт на процессоре сервера и займёт заметно дольше. Прервать можно в любой момент (Ctrl+C) – готовое сохранится."))
         with update_lock(cfg):
             st = inventory.build(conn, llm, cfg)
             hy = hypotheses.build(conn, llm, cfg)
-        print(f"Групп в памяти: {st['groups']}, названо моделью сейчас: {st['named']}, не пункты (просто сведения): "
-              f"{st['skipped']}, склеено как одна тема: {st['joined']}, с одинаковым названием: {st['deduped']}.\nВ реестре: новых {st['new']}, обновлено {st['updated']}, снова всплыло после решения "
-              f"{st['resurfaced']}. Гипотез: новых {hy['new']}, новых наблюдений к известным {hy['observations']}.\n")
+        print(trl("Групп в памяти: {0}, названо моделью сейчас: {1}, не пункты (просто сведения): {2}, склеено как одна тема: {3}, с одинаковым названием: {4}.\n"
+                  "В реестре: новых {5}, обновлено {6}, снова всплыло после решения {7}. Гипотез: новых {8}, новых наблюдений к известным {9}.\n", st['groups'], st['named'], st['skipped'], st['joined'], st['deduped'], st['new'], st['updated'], st['resurfaced'], hy['new'], hy['observations']))
         lifereset.export(conn, cfg)
-        print("\nДальше – разбор по одному: python3 coach.py triage (или /triage в чате).\n")
+        print(trl("\nДальше – разбор по одному: python3 coach.py triage (или /triage в чате).\n"))
     except SystemExit as exc:
         print(exc)
         return 2
@@ -503,13 +486,13 @@ def cmd_triage(cfg: Config, args: argparse.Namespace) -> int:
     if conn is None:
         return 2
     if args.type and args.type not in LR_TYPES:
-        print("Тип – один из: " + ", ".join(LR_TYPES))
+        print(trl("Тип – один из: ") + ", ".join(LR_TYPES))
         return 2
     area = inventory.resolve_area(args.area) if args.area else None
     if args.area and area is None:
-        print("Область не узнал. Ждут решения по областям: "
+        print(trl("Область не узнал. Ждут решения по областям: ")
               + ", ".join(f"{a} – {n}" for a, n in inventory.area_counts(conn))
-              + ".\nМожно по-русски и началом слова: --area финансы, --area работа.")
+              + trl(".\nМожно по-русски и началом слова: --area финансы, --area работа."))
         conn.close()
         return 2
     try:
@@ -535,7 +518,7 @@ def cmd_sweep(cfg: Config, args: argparse.Namespace) -> int:
             try:
                 llm = connect_llm(cfg, fallback=True)
             except (SystemExit, OllamaError) as exc:
-                print(f"Модель недоступна ({exc}) – покажу списком без отбора.\n")
+                print(trl("Модель недоступна ({0}) – покажу списком без отбора.\n", exc))
         inventory.sweep(conn, llm, cfg, args.target)
         lifereset.export(conn, cfg)
     finally:
@@ -567,7 +550,7 @@ def cmd_hypotheses(cfg: Config, args: argparse.Namespace) -> int:
     try:
         if args.action == "build":
             st = hypotheses.build(conn, connect_llm(cfg, fallback=True), cfg)
-            print(f"Новых гипотез: {st['new']}, новых наблюдений к известным: {st['observations']}.\n")
+            print(trl("Новых гипотез: {0}, новых наблюдений к известным: {1}.\n", st['new'], st['observations']))
         else:
             hypotheses.review(conn, args.limit)
         lifereset.export(conn, cfg)
@@ -585,10 +568,10 @@ def cmd_reset(cfg: Config, args: argparse.Namespace) -> int:
         words = args.args or []
         if words[:1] == ["stage"] and len(words) > 1:
             key = lifereset.set_stage(conn, words[1])
-            print(f"Этап: {lifereset.stage_title(key)}\n" if key else "Этап – число от 1 до 6 или «авто».\n")
+            print(trl("Этап: {0}\n", lifereset.stage_title(key)) if key else trl("Этап – число от 1 до 6 или «авто».\n"))
         elif words[:1] == ["depth"] and len(words) > 1:
             ok = words[1].isdigit() and lifereset.set_depth(conn, int(words[1]))
-            print(f"Глубина разговора: {words[1]}\n" if ok else "Глубина – 1, 2 или 3.\n")
+            print(trl("Глубина разговора: {0}\n", words[1]) if ok else trl("Глубина – 1, 2 или 3.\n"))
         elif words[:1] == ["export"]:
             lifereset.export(conn, cfg)
             return 0
@@ -607,7 +590,7 @@ def cmd_serve(cfg: Config, args: argparse.Namespace) -> int:
 
 def cmd_calibrate(cfg: Config, args: argparse.Namespace) -> int:
     if not cfg.db_path.exists():
-        print("База ещё не построена. Сначала: python3 coach.py update")
+        print(trl("База ещё не построена. Сначала: python3 coach.py update"))
         return 2
     llm = connect_llm(cfg)
     with update_lock(cfg):
@@ -616,15 +599,15 @@ def cmd_calibrate(cfg: Config, args: argparse.Namespace) -> int:
             n = timeline.calibrate(conn, llm, cfg, limit=args.limit, include_skipped=args.all)
             if n and sys.stdin.isatty():
                 try:
-                    ans = input("\nПересобрать профиль с учётом ответов сейчас? Это несколько минут. (д/н) ").strip().casefold()
+                    ans = input(trl("\nПересобрать профиль с учётом ответов сейчас? Это несколько минут. (д/н) ")).strip().casefold()
                 except (EOFError, KeyboardInterrupt):
                     ans = ""
-                if ans.startswith("д"):
+                if ans.startswith(("д", "y")):
                     domains, profile = rebuild_profile(conn, llm, cfg)
                     report.write_all(conn, cfg, domains, profile)
-                    print(f"Профиль обновлён: {cfg.memory_dir / 'profile.md'}")
+                    print(trl("Профиль обновлён: {0}", cfg.memory_dir / 'profile.md'))
                 else:
-                    print("Профиль учтёт ответы при следующем python3 coach.py update.")
+                    print(trl("Профиль учтёт ответы при следующем python3 coach.py update."))
         finally:
             conn.close()
     return 0
@@ -633,7 +616,7 @@ def cmd_calibrate(cfg: Config, args: argparse.Namespace) -> int:
 def cmd_eval(cfg: Config, args: argparse.Namespace) -> int:
     from . import evaluate
     if not cfg.db_path.exists():
-        print("База ещё не построена. Сначала: python3 coach.py update")
+        print(trl("База ещё не построена. Сначала: python3 coach.py update"))
         return 2
     conn = store.connect(cfg.db_path)
     try:
@@ -708,7 +691,7 @@ def cmd_reextract(cfg: Config, args: argparse.Namespace) -> int:
         conn = store.connect(cfg.db_path)
         n = extract.reset_extraction(conn, args.path)
         conn.close()
-    print(f"Помечено к повторному извлечению: {n} фрагментов. Запусти: python3 coach.py update")
+    print(trl("Помечено к повторному извлечению: {0} фрагментов. Запусти: python3 coach.py update", n))
     return 0
 
 
@@ -723,7 +706,7 @@ def cmd_recluster(cfg: Config, args: argparse.Namespace) -> int:
         timeline.refresh_currency(conn)
         report.write_cluster_review(conn, cfg)
         conn.close()
-    print(f"Кластеров: {cs['created']}. Проверь {cfg.memory_dir / 'clusters_review.md'}, затем python3 coach.py update")
+    print(trl("Кластеров: {0}. Проверь {1}, затем python3 coach.py update", cs['created'], cfg.memory_dir / 'clusters_review.md'))
     return 0
 
 
@@ -752,8 +735,7 @@ def cmd_sanitize(cfg: Config, args: argparse.Namespace) -> int:
         conn.close()
     if cfg.memory_dir.exists():
         shutil.rmtree(cfg.memory_dir)
-    print(f"Удалено записей с признаками секретов: {removed}. Сгенерированная память очищена; "
-          "заметки не изменялись, модель не вызывалась. Пересобрать: python3 coach.py update")
+    print(trl("Удалено записей с признаками секретов: {0}. Сгенерированная память очищена; заметки не изменялись, модель не вызывалась. Пересобрать: python3 coach.py update", removed))
     return 0
 
 
@@ -763,7 +745,7 @@ def cmd_export(cfg: Config, args: argparse.Namespace) -> int:
                conn.execute("SELECT key, payload_json FROM artifacts WHERE stage='domain'")}
     report.write_all(conn, cfg, domains, store.cache_any(conn, "profile", "final"))
     conn.close()
-    print(f"Файлы памяти обновлены: {cfg.memory_dir}")
+    print(trl("Файлы памяти обновлены: {0}", cfg.memory_dir))
     return 0
 
 
@@ -773,116 +755,108 @@ def cmd_name(cfg: Config, args: argparse.Namespace) -> int:
         value = "" if args.value == ["-"] else " ".join(args.value).strip()
         store.set_meta(conn, "user_name", value)
         conn.commit()
-        print(f"Имя в профиле: {value}." if value else "Имя убрано: в профиле — «он».")
-        print("Профиль учтёт это при следующем python3 coach.py update.")
+        print(trl("Имя в профиле: {0}.", value) if value else trl("Имя убрано: в профиле — «он»."))
+        print(trl("Профиль учтёт это при следующем python3 coach.py update."))
     else:
         current = cfg.user_name or store.get_meta(conn, "user_name") or ""
-        print(f"Имя в профиле: {current}" if current else "Имя не задано: в профиле — «он». "
-              "Задать: python3 coach.py name Имя")
+        print(trl("Имя в профиле: {0}", current) if current else trl("Имя не задано: в профиле — «он». Задать: python3 coach.py name Имя"))
     conn.close()
     return 0
 
 
 COMMANDS = {
-    "update": (cmd_update, "обновить память: новые и изменённые заметки → факты → профиль (по умолчанию)"),
-    "import": (cmd_import, "добавить файл в память: .xlsx, .csv, .docx, .txt, .md (vault не меняется)"),
-    "plan": (cmd_plan, "посчитать объём работы без вызова модели"),
-    "status": (cmd_status, "состояние базы"),
-    "chat": (cmd_chat, "разговор с коучем"),
-    "serve": (cmd_serve, "веб-интерфейс с котом Базилием: коуч работает постоянно (PIN в LOCAL_COACH_WEB_PIN)"),
-    "bio": (cmd_bio, "хронология жизни по годам из базы, без модели: bio 1988-2026; --all — всё подряд"),
-    "history": (cmd_bio, "прежнее имя команды bio"),
-    "calibrate": (cmd_calibrate, "что из старых заметок верно сейчас: сверка с биографией и вопросы тебе"),
-    "eval": (cmd_eval, "оценить качество памяти и ответов; --report — только числа, можно пересылать"),
-    "checkin": (cmd_checkin, "чек-ин: три коротких вопроса о том, что сейчас — коуч узнаёт настоящее"),
-    "people": (cmd_people, "люди из заметок: кто это, есть ли сейчас в жизни; --list — список"),
-    "agreements": (cmd_agreements, "договорённости из разговоров: посмотреть, отметить сделанное, добавить"),
-    "review": (cmd_review, "разобрать предложения в память и вопросы аудита"),
-    "forget": (cmd_forget, "найти и забыть неверное утверждение"),
-    "reextract": (cmd_reextract, "пометить фрагменты для повторного извлечения (после правки промптов)"),
-    "recluster": (cmd_recluster, "пересобрать кластеры (после смены порога)"),
-    "sanitize": (cmd_sanitize, "перепроверить фильтр секретов и очистить производные данные"),
-    "name": (cmd_name, "как называть тебя в профиле: name Имя; без имени — показать; name - — убрать"),
-    "export": (cmd_export, "пересоздать файлы памяти из базы без вызова модели"),
-    "reset": (cmd_reset, "Life Reset: обзор программы и следующий шаг; reset stage N, reset depth N, reset export"),
-    "inventory": (cmd_inventory, "Life Reset: собрать реестр накопленного из памяти; inventory plan – сколько работы (без модели); "
-                               "inventory list [--status S]; inventory dedupe – склеить одинаковые названия"),
-    "triage": (cmd_triage, "Life Reset: разобрать реестр по одному пункту (--limit N, --type project, --area финансы); "
-                         "--quick – быстро списком"),
-    "sweep": (cmd_sweep, "Life Reset: одиночные упоминания пачкой – отметь живое, остальное в архив"),
-    "audit": (cmd_audit, "Life Reset: аудит жизни по 12 областям, по строке на область; --show – итог"),
-    "hypotheses": (cmd_hypotheses, "Life Reset: проверить гипотезы о повторяющихся сценариях; hypotheses build"),
+    "update": (cmd_update, trl("обновить память: новые и изменённые заметки → факты → профиль (по умолчанию)")),
+    "import": (cmd_import, trl("добавить файл в память: .xlsx, .csv, .docx, .txt, .md (vault не меняется)")),
+    "plan": (cmd_plan, trl("посчитать объём работы без вызова модели")),
+    "status": (cmd_status, trl("состояние базы")),
+    "chat": (cmd_chat, trl("разговор с коучем")),
+    "serve": (cmd_serve, trl("веб-интерфейс с котом Базилием: коуч работает постоянно (PIN в LOCAL_COACH_WEB_PIN)")),
+    "bio": (cmd_bio, trl("хронология жизни по годам из базы, без модели: bio 1988-2026; --all — всё подряд")),
+    "history": (cmd_bio, trl("прежнее имя команды bio")),
+    "calibrate": (cmd_calibrate, trl("что из старых заметок верно сейчас: сверка с биографией и вопросы тебе")),
+    "eval": (cmd_eval, trl("оценить качество памяти и ответов; --report — только числа, можно пересылать")),
+    "checkin": (cmd_checkin, trl("чек-ин: три коротких вопроса о том, что сейчас — коуч узнаёт настоящее")),
+    "people": (cmd_people, trl("люди из заметок: кто это, есть ли сейчас в жизни; --list — список")),
+    "agreements": (cmd_agreements, trl("договорённости из разговоров: посмотреть, отметить сделанное, добавить")),
+    "review": (cmd_review, trl("разобрать предложения в память и вопросы аудита")),
+    "forget": (cmd_forget, trl("найти и забыть неверное утверждение")),
+    "reextract": (cmd_reextract, trl("пометить фрагменты для повторного извлечения (после правки промптов)")),
+    "recluster": (cmd_recluster, trl("пересобрать кластеры (после смены порога)")),
+    "sanitize": (cmd_sanitize, trl("перепроверить фильтр секретов и очистить производные данные")),
+    "name": (cmd_name, trl("как называть тебя в профиле: name Имя; без имени — показать; name - — убрать")),
+    "export": (cmd_export, trl("пересоздать файлы памяти из базы без вызова модели")),
+    "reset": (cmd_reset, trl("Life Reset: обзор программы и следующий шаг; reset stage N, reset depth N, reset export")),
+    "inventory": (cmd_inventory, trl("Life Reset: собрать реестр накопленного из памяти; inventory plan – сколько работы (без модели); inventory list [--status S]; inventory dedupe – склеить одинаковые названия")),
+    "triage": (cmd_triage, trl("Life Reset: разобрать реестр по одному пункту (--limit N, --type project, --area финансы); --quick – быстро списком")),
+    "sweep": (cmd_sweep, trl("Life Reset: одиночные упоминания пачкой – отметь живое, остальное в архив")),
+    "audit": (cmd_audit, trl("Life Reset: аудит жизни по 12 областям, по строке на область; --show – итог")),
+    "hypotheses": (cmd_hypotheses, trl("Life Reset: проверить гипотезы о повторяющихся сценариях; hypotheses build")),
 }
 NEEDS_VAULT = {"update", "plan", "sanitize", "import", "chat", "reset", "inventory", "triage", "sweep", "audit",
                "hypotheses"}
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="coach.py", description="Local Coach 5: локальная память, коучинг и Life Reset по заметкам Obsidian.")
-    parser.add_argument("--vault", help="путь к vault Obsidian или папке с .md (или переменная LOCAL_COACH_VAULT)")
-    parser.add_argument("--workspace", help=f"папка данных коуча (по умолчанию {Config().workspace})")
-    parser.add_argument("--ollama", help="адрес Ollama")
-    parser.add_argument("--ollama-fallback", help="запасной Ollama, когда ПК выключен (например модель на другой машине;"
-                                                  " по умолчанию нет): chat, checkin, review, forget")
-    parser.add_argument("--model", help="модель анализа и разговора")
-    parser.add_argument("--embedding-model", help="модель эмбеддингов")
-    parser.add_argument("--heavy-model", help="тяжёлая модель для извлечения фактов, синтеза, реестра, гипотез и людей "
-                                              "(по умолчанию – как --model; чат остаётся на --model)")
-    parser.add_argument("--synth-model", help="модель для профиля и сверки с биографией (по умолчанию — как --model)")
+    parser = argparse.ArgumentParser(prog="coach.py", description=trl("Local Coach 5: локальная память, коучинг и Life Reset по заметкам Obsidian."))
+    parser.add_argument("--vault", help=trl("путь к vault Obsidian или папке с .md (или переменная LOCAL_COACH_VAULT)"))
+    parser.add_argument("--workspace", help=trl("папка данных коуча (по умолчанию {0})", Config().workspace))
+    parser.add_argument("--ollama", help=trl("адрес Ollama"))
+    parser.add_argument("--ollama-fallback", help=trl("запасной Ollama, когда основной не отвечает, например модель на другой машине (по умолчанию: {0}; пусто – без запасного): chat, checkin, review, forget", Config().ollama_fallback or "-"))
+    parser.add_argument("--model", help=trl("модель анализа и разговора"))
+    parser.add_argument("--embedding-model", help=trl("модель эмбеддингов"))
+    parser.add_argument("--heavy-model", help=trl("тяжёлая модель для извлечения фактов, синтеза, реестра, гипотез и людей (по умолчанию – как --model; чат остаётся на --model)"))
+    parser.add_argument("--synth-model", help=trl("модель для профиля и сверки с биографией (по умолчанию — как --model)"))
     sub = parser.add_subparsers(dest="command")
     for name, (_fn, help_text) in COMMANDS.items():
         p = sub.add_parser(name, help=help_text)
         if name == "update":
-            p.add_argument("--import-v3", metavar="DB", help="перенести готовые извлечения из базы v3 "
-                                                              "(устаревшая версия коуча)")
-            p.add_argument("--skip-synth", action="store_true", help="только извлечение и векторы, без синтеза")
+            p.add_argument("--import-v3", metavar="DB", help=trl("перенести готовые извлечения из базы v3 (устаревшая версия коуча)"))
+            p.add_argument("--skip-synth", action="store_true", help=trl("только извлечение и векторы, без синтеза"))
         if name in ("bio", "history"):
-            p.add_argument("period", nargs="*", help="год или период: 2005, 1988-2026, с 2010")
-            p.add_argument("--all", action="store_true", help="всё подряд, как в базе: и проектное, и не-события, "
-                                                             "и пересказы биографии")
+            p.add_argument("period", nargs="*", help=trl("год или период: 2005, 1988-2026, с 2010"))
+            p.add_argument("--all", action="store_true", help=trl("всё подряд, как в базе: и проектное, и не-события, и пересказы биографии"))
         if name == "forget":
             p.add_argument("text", nargs="+")
         if name == "import":
-            p.add_argument("files", nargs="+", metavar="ФАЙЛ")
+            p.add_argument("files", nargs="+", metavar=trl("ФАЙЛ"))
         if name == "calibrate":
-            p.add_argument("--limit", type=int, default=25, help="сколько вопросов за раз (по умолчанию 25)")
-            p.add_argument("--all", action="store_true", help="спросить и про пропущенные раньше")
+            p.add_argument("--limit", type=int, default=25, help=trl("сколько вопросов за раз (по умолчанию 25)"))
+            p.add_argument("--all", action="store_true", help=trl("спросить и про пропущенные раньше"))
         if name == "eval":
-            p.add_argument("--report", action="store_true", help="только отчёт: числа без содержимого")
-            p.add_argument("--n", type=int, default=10, help="пунктов на часть (по умолчанию 10)")
-            p.add_argument("--only", help="только части: currency,fact,profile,reply")
+            p.add_argument("--report", action="store_true", help=trl("только отчёт: числа без содержимого"))
+            p.add_argument("--n", type=int, default=10, help=trl("пунктов на часть (по умолчанию 10)"))
+            p.add_argument("--only", help=trl("только части: currency,fact,profile,reply"))
         if name == "people":
-            p.add_argument("--list", action="store_true", help="только список, без вопросов")
-            p.add_argument("--limit", type=int, default=15, help="сколько вопросов за раз (по умолчанию 15)")
-            p.add_argument("--all", action="store_true", help="спросить и про пропущенных раньше")
+            p.add_argument("--list", action="store_true", help=trl("только список, без вопросов"))
+            p.add_argument("--limit", type=int, default=15, help=trl("сколько вопросов за раз (по умолчанию 15)"))
+            p.add_argument("--all", action="store_true", help=trl("спросить и про пропущенных раньше"))
         if name == "serve":
-            p.add_argument("--host", help="адрес (по умолчанию 127.0.0.1; в сеть — 0.0.0.0 и обязательно PIN)")
-            p.add_argument("--port", type=int, help="порт (по умолчанию 3012)")
+            p.add_argument("--host", help=trl("адрес (по умолчанию 127.0.0.1; в сеть — 0.0.0.0 и обязательно PIN)"))
+            p.add_argument("--port", type=int, help=trl("порт (по умолчанию 3012)"))
         if name == "name":
-            p.add_argument("value", nargs="*", help="имя; «-» — убрать")
+            p.add_argument("value", nargs="*", help=trl("имя; «-» — убрать"))
         if name == "inventory":
             p.add_argument("action", nargs="?", choices=["build", "list", "plan", "reopen", "dedupe"], default="build")
-            p.add_argument("ref", nargs="?", help="для reopen: номер пункта, LR-12")
-            p.add_argument("--status", help="для list: только этот статус (active, someday, inbox…)")
+            p.add_argument("ref", nargs="?", help=trl("для reopen: номер пункта, LR-12"))
+            p.add_argument("--status", help=trl("для list: только этот статус (active, someday, inbox…)"))
         if name == "triage":
-            p.add_argument("--limit", type=int, default=10, help="сколько пунктов за раз (по умолчанию 10)")
-            p.add_argument("--type", help="только этот тип: project, idea, wish, commitment, question…")
-            p.add_argument("--area", help="только эта область жизни: финансы, работа, здоровье… (или ключ: finance)")
-            p.add_argument("--quick", action="store_true", help="быстро списком: по 10 строк, «1а 2к 3о», «4?» – карточкой")
+            p.add_argument("--limit", type=int, default=10, help=trl("сколько пунктов за раз (по умолчанию 10)"))
+            p.add_argument("--type", help=trl("только этот тип: project, idea, wish, commitment, question…"))
+            p.add_argument("--area", help=trl("только эта область жизни: финансы, работа, здоровье… (или ключ: finance)"))
+            p.add_argument("--quick", action="store_true", help=trl("быстро списком: по 10 строк, «1а 2к 3о», «4?» – карточкой"))
         if name == "sweep":
-            p.add_argument("--target", type=int, default=130, help="сколько самых значимых отобрать моделью "
-                                                                   "по всем областям (по умолчанию 130)")
-            p.add_argument("--no-pick", action="store_true", help="без отбора моделью – все подряд по заметкам")
+            p.add_argument("--target", type=int, default=130, help=trl("сколько самых значимых отобрать моделью по всем областям (по умолчанию 130)"))
+            p.add_argument("--no-pick", action="store_true", help=trl("без отбора моделью – все подряд по заметкам"))
         if name == "audit":
-            p.add_argument("--areas", help="только эти области через запятую: health,career,finance…")
-            p.add_argument("--show", action="store_true", help="показать итог последнего раунда")
+            p.add_argument("--areas", help=trl("только эти области через запятую: health,career,finance…"))
+            p.add_argument("--show", action="store_true", help=trl("показать итог последнего раунда"))
         if name == "hypotheses":
             p.add_argument("action", nargs="?", choices=["build", "review"], default="review")
-            p.add_argument("--limit", type=int, default=5, help="сколько за раз (по умолчанию 5)")
+            p.add_argument("--limit", type=int, default=5, help=trl("сколько за раз (по умолчанию 5)"))
         if name == "reset":
-            p.add_argument("args", nargs="*", help="stage N | stage авто | depth N | export")
+            p.add_argument("args", nargs="*", help=trl("stage N | stage авто | depth N | export"))
         if name == "reextract":
-            p.add_argument("--path", help="только заметки, путь которых начинается с этого")
+            p.add_argument("--path", help=trl("только заметки, путь которых начинается с этого"))
     args = parser.parse_args(argv)
     if not args.command:
         args.command = "update"
@@ -891,11 +865,11 @@ def main(argv: list[str] | None = None) -> int:
         cfg = build_config(args)
         return COMMANDS[args.command][0](cfg, args)
     except KeyboardInterrupt:
-        print("\nОстановлено. Всё готовое сохранено; повторный запуск продолжит с места остановки.")
+        print(trl("\nОстановлено. Всё готовое сохранено; повторный запуск продолжит с места остановки."))
         return 130
     except FileNotFoundError as exc:
-        print(f"ОШИБКА: {exc}", file=sys.stderr)
+        print(trl("ОШИБКА: {0}", exc), file=sys.stderr)
         return 2
     except OllamaError as exc:
-        print(f"\nОШИБКА Ollama: {exc}\nПовторный запуск продолжит с места остановки.", file=sys.stderr)
+        print(trl("\nОШИБКА Ollama: {0}\nПовторный запуск продолжит с места остановки.", exc), file=sys.stderr)
         return 2

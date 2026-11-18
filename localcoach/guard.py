@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from .i18n import trl
 
 CREDENTIAL_NAME_TERMS = (
     "пароли", "пароль", "passwords", "password manager", "credentials",
@@ -33,14 +34,14 @@ def name_hold(relpath: str, title: str) -> str | None:
     name = (relpath + " " + title).casefold()
     for term in CREDENTIAL_NAME_TERMS:
         if term in name:
-            return "путь или название похоже на хранилище учётных данных"
+            return trl("путь или название похоже на хранилище учётных данных")
     return None
 
 
 def text_hold(text: str) -> str | None:
     for pattern in SECRET_PATTERNS:
         if pattern.search(text or ""):
-            return "найден возможный пароль, токен, ключ или номер карты"
+            return trl("найден возможный пароль, токен, ключ или номер карты")
     return None
 
 

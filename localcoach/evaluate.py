@@ -20,44 +20,47 @@ from .config import Config, DOMAIN_TITLES, KIND_TITLES, PRIVATE_DOMAINS
 from .ollama import Ollama
 from .prompts import PROMPT_VERSION
 from .util import digest, iso_now
+from .i18n import trl
 
 _PRIVATE_SQL = ",".join(f"'{d}'" for d in PRIVATE_DOMAINS) or "''"
 
 # Буква → вердикт. Первый вердикт в каждом наборе — «хорошо», по нему считается точность.
 VERDICTS = {
-    "currency": {"в": "ok", "н": "wrong"},
-    "fact": {"в": "ok", "и": "distorted", "ч": "not_me", "н": "wrong"},
-    "profile": {"в": "ok", "ч": "partly", "у": "outdated", "н": "wrong"},
-    "reply": {"х": "good", "о": "fine", "м": "miss", "ф": "fact_error", "п": "past_as_present"},
+    "currency": {"в": "ok", "н": "wrong", "c": "ok", "w": "wrong"},
+    "fact": {"в": "ok", "и": "distorted", "ч": "not_me", "н": "wrong", "c": "ok", "d": "distorted", "m": "not_me", "w": "wrong"},
+    "profile": {"в": "ok", "ч": "partly", "у": "outdated", "н": "wrong", "c": "ok", "p": "partly", "o": "outdated", "w": "wrong"},
+    "reply": {"х": "good", "о": "fine", "м": "miss", "ф": "fact_error", "п": "past_as_present",
+              "g": "good", "f": "fine", "m": "miss", "e": "fact_error", "p": "past_as_present"},
 }
 VERDICT_TITLES = {
-    "ok": "верно", "wrong": "неверно", "distorted": "искажено", "not_me": "не про меня", "partly": "частично",
-    "outdated": "устарело", "good": "хорошо", "fine": "нормально", "miss": "мимо", "fact_error": "ошибка в фактах",
-    "past_as_present": "прошлое как настоящее",
+    "ok": trl("верно"), "wrong": trl("неверно"), "distorted": trl("искажено"), "not_me": trl("не про меня"), "partly": trl("частично"),
+    "outdated": trl("устарело"), "good": trl("хорошо"), "fine": trl("нормально"), "miss": trl("мимо"), "fact_error": trl("ошибка в фактах"),
+    "past_as_present": trl("прошлое как настоящее"),
 }
 PARTS = {
-    "currency": ("Актуальность", "Верно ли определено, что это сейчас или в прошлом?",
-                 "в — верно, н — неверно (сразу спрошу, как правильно)"),
-    "fact": ("Факты из заметок", "Верно ли модель поняла заметку?",
-             "в — верно, и — искажено или преувеличено, ч — это не про меня, н — неверно (забуду)"),
-    "profile": ("Профиль", "Верно ли это о тебе сейчас?",
-                "в — верно, ч — частично или преувеличено, у — устарело, н — неверно"),
-    "reply": ("Ответы коуча", "Как тебе этот ответ?",
-              "х — хорошо, о — нормально, м — мимо, ф — ошибка в фактах, п — прошлое выдал за настоящее"),
+    "currency": (trl("Актуальность"), trl("Верно ли определено, что это сейчас или в прошлом?"),
+                 trl("в — верно, н — неверно (сразу спрошу, как правильно)")),
+    "fact": (trl("Факты из заметок"), trl("Верно ли модель поняла заметку?"),
+             trl("в — верно, и — искажено или преувеличено, ч — это не про меня, н — неверно (забуду)")),
+    "profile": (trl("Профиль"), trl("Верно ли это о тебе сейчас?"),
+                trl("в — верно, ч — частично или преувеличено, у — устарело, н — неверно")),
+    "reply": (trl("Ответы коуча"), trl("Как тебе этот ответ?"),
+              trl("х — хорошо, о — нормально, м — мимо, ф — ошибка в фактах, п — прошлое выдал за настоящее")),
 }
 BREAKDOWN_TITLES = {
-    "timeline:past": "сверка: в прошлом", "timeline:current": "сверка: сейчас", "recent:current": "свежее",
-    "confirmed:current": "подтверждено", "kind:history": "событие", "portrait": "портрет",
-    "core_facts": "устойчивое", "current_focus": "сейчас в фокусе", "goals": "цели", "values": "ценности",
-    "strengths": "сильные стороны", "tensions": "противоречия", "history": "прошлое",
-    "unverified": "не проверено", "patterns": "гипотезы",
+    "timeline:past": trl("сверка: в прошлом"), "timeline:current": trl("сверка: сейчас"), "recent:current": trl("свежее"),
+    "confirmed:current": trl("подтверждено"), "kind:history": trl("событие"), "portrait": trl("портрет"),
+    "core_facts": trl("устойчивое"), "current_focus": trl("сейчас в фокусе"), "goals": trl("цели"), "values": trl("ценности"),
+    "strengths": trl("сильные стороны"), "tensions": trl("противоречия"), "history": trl("прошлое"),
+    "unverified": trl("не проверено"), "patterns": trl("гипотезы"),
 }
 
 
 # Почему пункт профиля неверен — чтобы цифры подсказывали, что чинить.
-REASONS = {"в": "invented", "п": "past", "о": "overgeneral", "с": "mixed"}
-REASON_TITLES = {"invented": "выдумано", "past": "прошлое как настоящее", "overgeneral": "обобщение из одного случая",
-                 "mixed": "смешаны разные вещи"}
+REASONS = {"в": "invented", "п": "past", "о": "overgeneral", "с": "mixed",
+           "i": "invented", "p": "past", "o": "overgeneral", "m": "mixed"}
+REASON_TITLES = {"invented": trl("выдумано"), "past": trl("прошлое как настоящее"), "overgeneral": trl("обобщение из одного случая"),
+                 "mixed": trl("смешаны разные вещи")}
 
 
 def profile_stamp(conn: sqlite3.Connection) -> str:
@@ -173,23 +176,23 @@ def _show(target: str, it: dict[str, Any]) -> None:
     if target == "currency":
         when = timeline.label(it["currency"], it["currency_src"], it["valid_until"], it["period"], it["last_date"])
         if it["currency"] == "history":
-            when = "событие прошлого"
+            when = trl("событие прошлого")
         dates = it["last_date"] if it["first_date"] in (None, it["last_date"]) else f"{it['first_date']}…{it['last_date']}"
         print(f"  {it['claim']}")
-        print(f"  → {when or 'сейчас'}" + (f"  (упоминания: {dates})" if dates else ""))
+        print(f"  → {when or 'сейчас'}" + (trl("  (упоминания: {0})", dates) if dates else ""))
     elif target == "fact":
-        src = f"заметка «{it['title']}»" if it.get("title") else "заметка"
+        src = trl("заметка «{0}»", it['title']) if it.get("title") else trl("заметка")
         print(f"  [{KIND_TITLES.get(it['kind'], it['kind'])}, {DOMAIN_TITLES.get(it['domain'], it['domain'])}] {it['claim']}")
         if it.get("evidence_quote"):
-            print(f"  цитата: «{it['evidence_quote']}»")
+            print(trl("  цитата: «{0}»", it['evidence_quote']))
         print(f"  {src}" + (f", {it['event_date']}" if it.get("event_date") else ""))
     elif target == "profile":
         print(f"  [{BREAKDOWN_TITLES.get(it['section'], it['section'])}] {it['text']}")
     else:
         q = it["question"] if len(it["question"]) <= 400 else it["question"][:400] + "…"
         a = it["answer"] if len(it["answer"]) <= 1500 else it["answer"][:1500] + "…"
-        print(f"  {it['when']}, ты: {q}")
-        print(f"  коуч: {a}")
+        print(trl("  {0}, ты: {1}", it['when'], q))
+        print(trl("  коуч: {0}", a))
 
 
 def _save(conn: sqlite3.Connection, cfg: Config, target: str, it: dict[str, Any], verdict: str,
@@ -203,8 +206,7 @@ def _save(conn: sqlite3.Connection, cfg: Config, target: str, it: dict[str, Any]
 
 def _ask_reason() -> str:
     try:
-        ans = input("  Почему? в — выдумано, п — прошлое как настоящее, о — обобщение из одного случая, "
-                    "с — смешаны разные вещи, Enter — пропустить: ").strip().casefold()
+        ans = input(trl("  Почему? в — выдумано, п — прошлое как настоящее, о — обобщение из одного случая, с — смешаны разные вещи, Enter — пропустить: ")).strip().casefold()
     except (EOFError, KeyboardInterrupt):
         return ""
     return REASONS.get(ans[:1], "")
@@ -216,16 +218,16 @@ def _fix(conn: sqlite3.Connection, llm: Ollama, target: str, it: dict[str, Any],
         from .chat import _mark
         _mark(conn, llm, [it["id"]], "rejected")
         conn.commit()
-        print("  (забыл)")
+        print(trl("  (забыл)"))
     elif target == "currency" and verdict == "wrong":
         try:
-            ans = input("  Как правильно? с — так и сейчас, б [год] — в прошлом, Enter — не знаю: ").strip().casefold()
+            ans = input(trl("  Как правильно? с — так и сейчас, б [год] — в прошлом, Enter — не знаю: ")).strip().casefold()
         except (EOFError, KeyboardInterrupt):
             return
-        if ans.startswith("с"):
+        if ans.startswith(("с", "c")):
             timeline.add_mark(conn, it["id"], "current", source="user")
-            print("  ✓ так и сейчас")
-        elif ans.startswith("б") or timeline._YEAR.search(ans):
+            print(trl("  ✓ так и сейчас"))
+        elif ans.startswith(("б", "p")) or timeline._YEAR.search(ans):
             until, period = timeline._years(ans)
             timeline.add_mark(conn, it["id"], "past", until or None, period or None, "user")
             print(f"  ✓ {timeline.label('past', '', until, period, None)}")
@@ -241,17 +243,17 @@ def run(conn: sqlite3.Connection, llm: Ollama, cfg: Config, n: int = 10, only: l
     }
     stamp = profile_stamp(conn)
     if stamp and (not only or "profile" in only or "reply" in only):
-        print(f"Профиль собран {stamp}; ответы коуча — только из разговоров после этого.")
+        print(trl("Профиль собран {0}; ответы коуча — только из разговоров после этого.", stamp))
     targets = [t for t in samples if not only or t in only]
-    print("Оценка качества: по каждой части — небольшая случайная выборка. Уже оценённое не повторяется.\n"
-          "Enter — пропустить пункт, 0 — к следующей части, 00 — закончить.\n")
+    print(trl("Оценка качества: по каждой части — небольшая случайная выборка. Уже оценённое не повторяется.\n"
+              "Enter — пропустить пункт, 0 — к следующей части, 00 — закончить.\n"))
     total = 0
     stop = False
     for target in targets:
         items = samples[target]()
         title, question, legend = PARTS[target]
         if not items:
-            print(f"— {title}: оценивать нечего.\n")
+            print(trl("— {0}: оценивать нечего.\n", title))
             continue
         print(f"=== {title} ({len(items)}) — {question}\n    {legend}\n")
         letters = VERDICTS[target]
@@ -283,10 +285,10 @@ def run(conn: sqlite3.Connection, llm: Ollama, cfg: Config, n: int = 10, only: l
     if total:
         from .vectors import update_clusters
         update_clusters(conn, cfg, quiet=True)
-        print(f"Оценено: {total}.\n")
+        print(trl("Оценено: {0}.\n", total))
         for line in report_lines(conn, latest_only=True):
             print(line)
-        print("\nПолный отчёт по всем версиям: python3 coach.py eval --report")
+        print(trl("\nПолный отчёт по всем версиям: python3 coach.py eval --report"))
     return total
 
 
@@ -317,7 +319,7 @@ def _line(label: str, verdicts: list[str], good: str) -> str:
 
 
 def report_lines(conn: sqlite3.Connection, latest_only: bool = False) -> list[str]:
-    lines = ["Оценка качества — только числа, без содержимого (можно пересылать)."]
+    lines = [trl("Оценка качества — только числа, без содержимого (можно пересылать).")]
     any_rows = False
     for target, (title, _q, _l) in PARTS.items():
         rows = conn.execute("SELECT version, breakdown, verdict, reason FROM eval_marks WHERE target=? ORDER BY id",
@@ -332,7 +334,7 @@ def report_lines(conn: sqlite3.Connection, latest_only: bool = False) -> list[st
         lines.append(f"\n{title}:")
         for v in versions:
             code, _prompts, model, stamp = (v.split("|") + ["", "", ""])[:4]
-            label = f"v{code} · {model}" + (f" · профиль {stamp}" if stamp else "")
+            label = f"v{code} · {model}" + (trl(" · профиль {0}", stamp) if stamp else "")
             lines.append(_line(label, [r["verdict"] for r in rows if r["version"] == v], good))
         # Разрез по источнику или разделу — по последней версии.
         last = [r for r in rows if r["version"] == versions[-1]]
@@ -349,8 +351,8 @@ def report_lines(conn: sqlite3.Connection, latest_only: bool = False) -> list[st
             if r["reason"]:
                 reasons[r["reason"]] = reasons.get(r["reason"], 0) + 1
         if reasons:
-            lines.append("  причины ошибок: " + ", ".join(f"{REASON_TITLES.get(k, k)} {n}" for k, n in
+            lines.append(trl("  причины ошибок: ") + ", ".join(f"{REASON_TITLES.get(k, k)} {n}" for k, n in
                                                          sorted(reasons.items(), key=lambda x: -x[1])))
     if not any_rows:
-        lines.append("Оценок пока нет: python3 coach.py eval")
+        lines.append(trl("Оценок пока нет: python3 coach.py eval"))
     return lines

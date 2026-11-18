@@ -415,3 +415,12 @@ LR_PICK_SYSTEM = f"""Выбери самое значимое. Человек р
 
 def lr_pick_schema(k: int) -> dict:
     return _obj({"chosen": _arr(S, max(1, k))})
+
+
+# Английский набор (prompts_en.py): определения оттуда заменяют русские одноимённые. Схемы и функции без текста общие.
+from .i18n import LANG  # noqa: E402
+
+if LANG != "ru":
+    from . import prompts_en as _en  # noqa: E402
+
+    globals().update({k: v for k, v in vars(_en).items() if not k.startswith("__")})

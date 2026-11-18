@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from .i18n import trl
 
 
 def _env(name: str, default: str) -> str:
@@ -48,18 +49,18 @@ DOMAINS = (
     "administrative_records", "other",
 )
 DOMAIN_TITLES = {
-    "work_career": "Работа и карьера",
-    "health_wellbeing": "Здоровье и самочувствие",
-    "relationships_social": "Отношения и люди",
-    "personal_growth": "Личное развитие",
-    "life_logistics": "Быт и организация жизни",
-    "finance": "Финансы",
-    "hobbies_interests": "Хобби и интересы",
-    "projects_creative": "Проекты и творчество",
-    "learning_knowledge": "Учёба и знания",
-    "identity_values": "Ценности и самоопределение",
-    "administrative_records": "Документы и администрирование",
-    "other": "Прочее",
+    "work_career": trl("Работа и карьера"),
+    "health_wellbeing": trl("Здоровье и самочувствие"),
+    "relationships_social": trl("Отношения и люди"),
+    "personal_growth": trl("Личное развитие"),
+    "life_logistics": trl("Быт и организация жизни"),
+    "finance": trl("Финансы"),
+    "hobbies_interests": trl("Хобби и интересы"),
+    "projects_creative": trl("Проекты и творчество"),
+    "learning_knowledge": trl("Учёба и знания"),
+    "identity_values": trl("Ценности и самоопределение"),
+    "administrative_records": trl("Документы и администрирование"),
+    "other": trl("Прочее"),
 }
 # Домены, которые не попадают в чат и синтез: там обычно реквизиты и документы.
 PRIVATE_DOMAINS = {"administrative_records"}
@@ -69,11 +70,11 @@ FACT_KINDS = (
     "constraint", "habit", "strategy", "strength", "concern", "open_loop",
 )
 KIND_TITLES = {
-    "fact": "факт", "event": "событие", "state": "состояние", "goal": "цель",
-    "decision": "решение", "preference": "предпочтение", "value": "ценность",
-    "constraint": "ограничение", "habit": "привычка", "strategy": "стратегия",
-    "strength": "сильная сторона", "concern": "тревога/забота",
-    "open_loop": "незакрытое дело",
+    "fact": trl("факт"), "event": trl("событие"), "state": trl("состояние"), "goal": trl("цель"),
+    "decision": trl("решение"), "preference": trl("предпочтение"), "value": trl("ценность"),
+    "constraint": trl("ограничение"), "habit": trl("привычка"), "strategy": trl("стратегия"),
+    "strength": trl("сильная сторона"), "concern": trl("тревога/забота"),
+    "open_loop": trl("незакрытое дело"),
 }
 # Статус намерения: для целей, решений и незакрытых дел. Остальным — none.
 INTENT_STATUSES = ("none", "idea", "wanted", "planned", "in_progress", "completed", "abandoned", "unclear")
@@ -83,36 +84,36 @@ SUBJECTS = ("self", "other_person", "general")
 # Что накопилось: не всё — задача. Тип определяет, какие вопросы задавать при разборе.
 LR_TYPES = ("commitment", "project", "idea", "wish", "question", "situation", "routine", "material", "experience")
 LR_TYPE_TITLES = {
-    "commitment": "обязательство", "project": "незаконченный проект", "idea": "идея", "wish": "желание",
-    "question": "нерешённый вопрос", "situation": "незакрытая ситуация", "routine": "повторяющаяся обязанность",
-    "material": "знание и материал", "experience": "жизненный опыт",
+    "commitment": trl("обязательство"), "project": trl("незаконченный проект"), "idea": trl("идея"), "wish": trl("желание"),
+    "question": trl("нерешённый вопрос"), "situation": trl("незакрытая ситуация"), "routine": trl("повторяющаяся обязанность"),
+    "material": trl("знание и материал"), "experience": trl("жизненный опыт"),
 }
 # Судьба пункта. abandoned — осознанно оставлено (закрыто как дело, но остаётся в биографии);
 # archived — сохранено как история или справка; dismissed — вообще не пункт (ошибка извлечения).
 LR_STATUSES = ("inbox", "clarification", "active", "incubating", "someday", "waiting", "delegated",
                "completed", "abandoned", "archived", "dismissed")
 LR_STATUS_TITLES = {
-    "inbox": "не разобрано", "clarification": "уточнить", "active": "активно", "incubating": "инкубатор",
-    "someday": "когда-нибудь", "waiting": "жду", "delegated": "передано", "completed": "завершено",
-    "abandoned": "отпущено", "archived": "в архиве", "dismissed": "не пункт",
+    "inbox": trl("не разобрано"), "clarification": trl("уточнить"), "active": trl("активно"), "incubating": trl("инкубатор"),
+    "someday": trl("когда-нибудь"), "waiting": trl("жду"), "delegated": trl("передано"), "completed": trl("завершено"),
+    "abandoned": trl("отпущено"), "archived": trl("в архиве"), "dismissed": trl("не пункт"),
 }
 LR_OPEN = {"inbox", "clarification"}                       # ещё не решено
 LR_PARKED = {"incubating", "someday", "waiting"}            # решено, но с пересмотром
 LR_CLOSED = {"completed", "abandoned", "archived", "delegated"}
 # Двенадцать областей аудита и домены памяти, из которых коуч показывает известное.
 LR_AREAS = (
-    ("health", "Здоровье", "физическое состояние, энергия, сон", ("health_wellbeing",)),
-    ("mind", "Психологическое состояние", "эмоциональное благополучие, устойчивость", ("health_wellbeing", "personal_growth")),
-    ("relationships", "Отношения", "партнёрство, семья, друзья", ("relationships_social",)),
-    ("career", "Карьера", "работа, профессиональное развитие", ("work_career",)),
-    ("finance", "Финансы", "доход, капитал, безопасность", ("finance",)),
-    ("place", "Место жизни", "страна, город, жильё, среда", ("life_logistics",)),
-    ("education", "Образование", "знания, навыки, интеллектуальное развитие", ("learning_knowledge",)),
-    ("creativity", "Творчество", "свои проекты", ("projects_creative",)),
-    ("rest", "Отдых", "развлечения, путешествия, восстановление", ("hobbies_interests",)),
-    ("social", "Социальная жизнь", "сообщество, общение, вклад", ("relationships_social",)),
-    ("meaning", "Самореализация", "смысл, самоопределение, личные амбиции", ("identity_values", "personal_growth")),
-    ("everyday", "Повседневность", "быт, порядок, привычки, организация", ("life_logistics",)),
+    ("health", trl("Здоровье"), trl("физическое состояние, энергия, сон"), ("health_wellbeing",)),
+    ("mind", trl("Психологическое состояние"), trl("эмоциональное благополучие, устойчивость"), ("health_wellbeing", "personal_growth")),
+    ("relationships", trl("Отношения"), trl("партнёрство, семья, друзья"), ("relationships_social",)),
+    ("career", trl("Карьера"), trl("работа, профессиональное развитие"), ("work_career",)),
+    ("finance", trl("Финансы"), trl("доход, капитал, безопасность"), ("finance",)),
+    ("place", trl("Место жизни"), trl("страна, город, жильё, среда"), ("life_logistics",)),
+    ("education", trl("Образование"), trl("знания, навыки, интеллектуальное развитие"), ("learning_knowledge",)),
+    ("creativity", trl("Творчество"), trl("свои проекты"), ("projects_creative",)),
+    ("rest", trl("Отдых"), trl("развлечения, путешествия, восстановление"), ("hobbies_interests",)),
+    ("social", trl("Социальная жизнь"), trl("сообщество, общение, вклад"), ("relationships_social",)),
+    ("meaning", trl("Самореализация"), trl("смысл, самоопределение, личные амбиции"), ("identity_values", "personal_growth")),
+    ("everyday", trl("Повседневность"), trl("быт, порядок, привычки, организация"), ("life_logistics",)),
 )
 EXPLICITNESS = ("explicit", "inferred")
 

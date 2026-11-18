@@ -20,29 +20,33 @@ from .config import Config
 from .ollama import Ollama, OllamaError
 from .prompts import FOCUS_SCHEMA, FOCUS_SYSTEM
 from .util import iso_now
+from .i18n import trl
 
 # Запасные реплики: если модель недоступна или ответила не по делу.
-FALLBACK = ("Я здесь.", "Работаем.", "Тут.", "Продолжай.", "Рядом.", "Идёт.", "Я на месте.", "Дальше.",
-            "Шаг за шагом.", "Держим темп.", "Спокойно.", "Я с тобой.", "Не спешим.", "Ты в процессе.",
-            "Ещё немного.", "Я рядом.")
+FALLBACK = (trl("Я здесь."), trl("Работаем."), trl("Тут."), trl("Продолжай."), trl("Рядом."), trl("Идёт."), trl("Я на месте."), trl("Дальше."),
+            trl("Шаг за шагом."), trl("Держим темп."), trl("Спокойно."), trl("Я с тобой."), trl("Не спешим."), trl("Ты в процессе."),
+            trl("Ещё немного."), trl("Я рядом."))
 
 # Коуч не видит экрана: реплики, будто он оценивает ход работы, отсеиваются.
-PRETEND = re.compile(r"(?i)прогресс|видн|вижу|виден|по плану|хорош|молодец|отличн|\bок\b")
+PRETEND = re.compile(r"(?i)прогресс|видн|вижу|виден|по плану|хорош|молодец|отличн|\bок\b|progress|looks good|on track|well done|great job|nice work|good job")
 
 MARK_EVERY_MIN = 10
 RECENT = 6
 
 # «побудь рядом», «посиди со мной», «body double» — включить режим словами.
 START = re.compile(r"(?i)\b(?:body[\s-]?double|бади[\s-]?дабл|режим присутствия|"
-                   r"(?:побудь|посиди|поприсутствуй)\s+(?:рядом|со\s+мной|тут|здесь))")
+                   r"(?:побудь|посиди|поприсутствуй)\s+(?:рядом|со\s+мной|тут|здесь)|"
+                   r"stay\s+(?:with\s+me|close|nearby)|sit\s+with\s+me|keep\s+me\s+company|be\s+here\s+with\s+me)")
 # Короткая реплика целиком — «стоп», «закончил», «готово» — выключить.
-STOP = re.compile(r"(?i)^\s*(?:стоп|хватит|готово|всё|все|закончил\w*|заканчиваю|конец|/stop)\s*[.!]*\s*$")
+STOP = re.compile(r"(?i)^\s*(?:стоп|хватит|готово|всё|все|закончил\w*|заканчиваю|конец|/stop|stop|enough|done|finished|that'?s\s+all|the\s+end)\s*[.!]*\s*$")
 
 
 # «/focus LR-12 на 50 минут отчёт»: пункт реестра Life Reset и план по времени – по желанию.
 ITEM = re.compile(r"(?i)(?<![\w-])LR-(\d+)(?!\w)")
-PLAN_MIN = re.compile(r"(?i)(?<!\w)(?:на\s+)?(\d{1,3})\s*(?:м|мин|минут[аы]?|min)(?!\w)")
-PLAN_HOUR = re.compile(r"(?i)(?<!\w)(?:(?:на\s+)?(\d)\s*(?:ч|час|часа|часов)|на\s+(час)|на\s+(полчаса)|на\s+(полтора)\s+часа)(?!\w)")
+PLAN_MIN = re.compile(r"(?i)(?<!\w)(?:на\s+|for\s+)?(\d{1,3})\s*(?:м|мин|минут[аы]?|min|mins|minutes?|m)(?!\w)")
+PLAN_HOUR = re.compile(r"(?i)(?<!\w)(?:(?:на\s+|for\s+)?(\d)\s*(?:ч|час|часа|часов|h|hr|hrs|hours?)|"
+                       r"for\s+(an\s+hour\s+and\s+a\s+half|1\.5\s+hours)|(?:на|for)\s+(час|an\s+hour|one\s+hour)|"
+                       r"(?:на|for)\s+(полчаса|half\s+an\s+hour)|на\s+(полтора)\s+часа)(?!\w)")
 PLAN_MAX = 240
 OUTCOME_WAIT = 30 * 60      # столько секунд после конца сессии ответ «как прошло» записывается к ней
 
@@ -65,7 +69,7 @@ def parse_start(conn: sqlite3.Connection | None, text: str) -> tuple[str, int | 
     else:
         m = PLAN_HOUR.search(text)
         if m:
-            planned = int(m.group(1)) * 60 if m.group(1) else 60 if m.group(2) else 30 if m.group(3) else 90
+            planned = int(m.group(1)) * 60 if m.group(1) else 90 if m.group(2) else 60 if m.group(3) else 30 if m.group(4) else 90
             if not 1 <= planned <= PLAN_MAX:
                 planned, m = None, None
     if planned and m:
@@ -74,16 +78,16 @@ def parse_start(conn: sqlite3.Connection | None, text: str) -> tuple[str, int | 
 
 
 def start_text(planned: int | None) -> str:
-    return ("Начали" + (f", на {_minutes(planned)}" if planned else "") + ". Я рядом – буду иногда коротко писать. "
-            + ("Когда время выйдет, позову. " if planned else "") + "Закончишь раньше – «стоп».")
+    return (trl("Начали") + (trl(", на {0}", _minutes(planned)) if planned else "") + trl(". Я рядом – буду иногда коротко писать. ")
+            + (trl("Когда время выйдет, позову. ") if planned else "") + trl("Закончишь раньше – «стоп»."))
 
 
 def _minutes(n: int) -> str:
     if n >= 60:
         h, m = divmod(n, 60)
-        return f"{h} ч" + (f" {m} мин" if m else "")
-    tail = "минута" if n % 10 == 1 and n % 100 != 11 else (
-        "минуты" if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else "минут")
+        return trl("{0} ч", h) + (trl(" {0} мин", m) if m else "")
+    tail = trl("минута") if n % 10 == 1 and n % 100 != 11 else (
+        trl("минуты") if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else trl("минут"))
     return f"{n} {tail}"
 
 
@@ -140,7 +144,7 @@ class BodyDouble:
         if not self.llm:
             return
         try:
-            raw = self.llm.chat_json(FOCUS_SYSTEM, f"Задача: {self.task or 'не названа'}", FOCUS_SCHEMA,
+            raw = self.llm.chat_json(FOCUS_SYSTEM, trl("Задача: {0}", self.task or trl("не названа")), FOCUS_SCHEMA,
                                      num_predict=500, attempts=1, timeout=60)
         except (OllamaError, OSError):
             return
@@ -176,7 +180,7 @@ class BodyDouble:
                 if self.on_plan:
                     self.on_plan()      # дальше сессию закрывает веб, в своём потоке
                     return
-                line = f"{_minutes(self.planned).capitalize()} – столько ты наметил. Можно продолжать; закончишь – «стоп»."
+                line = trl("{0} – столько ты наметил. Можно продолжать; закончишь – «стоп».", _minutes(self.planned).capitalize())
             elif left is not None and left < self.every[0] / 2:
                 continue                # конец плана почти сейчас: реплику не вставлять перед ним
             else:
@@ -207,10 +211,10 @@ def record(conn: sqlite3.Connection, session_id: int | None, bd: BodyDouble) -> 
 def end_text(bd: BodyDouble, minutes: int) -> str:
     """Что сказать в конце. После хотя бы минуты работы – спросить, как прошло: ответ запишется к сессии."""
     if bd.plan_reached and bd.planned:
-        head = f"{_minutes(bd.planned).capitalize()} – как и наметил."
+        head = trl("{0} – как и наметил.", _minutes(bd.planned).capitalize())
     else:
-        head = "Закончили. " + (f"{_minutes(minutes).capitalize()} работы." if minutes else "Меньше минуты.")
-    return head + (" Как прошло? Одной фразой – запишу к этой сессии." if minutes else "")
+        head = trl("Закончили. ") + (trl("{0} работы.", _minutes(minutes).capitalize()) if minutes else trl("Меньше минуты."))
+    return head + (trl(" Как прошло? Одной фразой – запишу к этой сессии.") if minutes else "")
 
 
 def save_outcome(conn: sqlite3.Connection, row_id: int, text: str) -> None:

@@ -16,6 +16,7 @@ from xml.etree import ElementTree as ET
 
 from .config import Config
 from .util import atomic_write, today
+from .i18n import trl
 
 SUPPORTED = (".xlsx", ".csv", ".docx", ".txt", ".md")
 
@@ -130,7 +131,7 @@ def read_xlsx(path: Path) -> list[Sheet]:
                     elif kind == "inlineStr":
                         value = _text(c)
                     elif kind == "b":
-                        value = "да" if v == "1" else "нет"
+                        value = trl("да") if v == "1" else trl("нет")
                     elif kind in ("str", "e"):
                         value = v
                     else:
@@ -189,7 +190,7 @@ def _span(first: str, last: str, latest: int = 0) -> str:
     if _YEARISH.fullmatch(first) and _YEARISH.fullmatch(last):
         start, end = re.findall(r"[0-9]{4}", first)[0], int(re.findall(r"[0-9]{4}", last)[-1])
         if latest and end == latest and latest >= date.today().year - 1:
-            return f"с {start} по настоящее время"
+            return trl("с {0} по настоящее время", start)
         return f"{start}–{end}"
     return f"{first} … {last}"
 
@@ -256,7 +257,7 @@ def table_markdown(sheets: list[Sheet]) -> str:
                 if last_row > i and r[0] and c > 0:
                     v += f" ({_span(r[0], rows[last_row][0] if rows[last_row] else '', latest_row)})"
                 if header:
-                    label = header[c] if c < len(header) and header[c] else f"Столбец {c + 1}"
+                    label = header[c] if c < len(header) and header[c] else trl("Столбец {0}", c + 1)
                     if re.match(r"\s*(?:возраст|age)\b", label, re.I):
                         continue        # возраст в таблице считает формула: это не факт о человеке
                     if last_col > c:
@@ -312,9 +313,9 @@ def to_markdown(path: Path) -> str:
     elif ext in (".txt", ".md"):
         body = path.read_text(encoding="utf-8", errors="replace").lstrip("﻿")
     else:
-        raise ValueError(f"формат {ext or 'без расширения'} не поддерживается; можно: {', '.join(SUPPORTED)}")
+        raise ValueError(trl("формат {0} не поддерживается; можно: {1}", ext or trl("без расширения"), ', '.join(SUPPORTED)))
     if not body.strip():
-        raise ValueError("в файле не нашлось текста")
+        raise ValueError(trl("в файле не нашлось текста"))
     header = f"---\nsource: {path.name}\nimported: {today()}\n---\n# {path.stem}\n\n"
     return header + body.strip() + "\n"
 
@@ -323,7 +324,7 @@ def import_file(cfg: Config, path: Path) -> Path:
     """Сохранить файл как заметку в imports/. Повторный импорт того же файла заменяет её:
     изменённые строки переизвлекутся, неизменённые останутся как были."""
     if not path.is_file():
-        raise FileNotFoundError(f"файл не найден: {path}")
+        raise FileNotFoundError(trl("файл не найден: {0}", path))
     md = to_markdown(path)
     name = re.sub(r'[\\/:*?"<>|]+', "_", path.stem).strip() or "import"
     target = cfg.imports_dir / f"{name}{'' if path.suffix.lower() == '.md' else path.suffix.lower().replace('.', '_')}.md"

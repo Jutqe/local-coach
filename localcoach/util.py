@@ -9,6 +9,7 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from .i18n import trl
 
 
 def iso_now() -> str:
@@ -120,6 +121,14 @@ _MONTHS_RU = {
 _RU_DATE = re.compile(r"(?<!\d)([12]?\d|3[01])\s+(январ|феврал|март|апрел|ма|июн|июл|август|сентябр|октябр|ноябр|декабр)[а-я]*\s+(20\d\d|19\d\d)", re.I)
 
 
+_MONTHS_EN = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10,
+              "nov": 11, "dec": 12}
+_EN_MON = r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+# «1 May 2015», «1st of May, 2015» и «May 1, 2015».
+_EN_DATE_DMY = re.compile(r"(?<!\d)([12]?\d|3[01])(?:st|nd|rd|th)?\s+(?:of\s+)?" + _EN_MON + r"\.?,?\s+" + _Y + r"(?!\d)", re.I)
+_EN_DATE_MDY = re.compile(r"\b" + _EN_MON + r"\.?\s+([12]?\d|3[01])(?:st|nd|rd|th)?,?\s+" + _Y + r"(?!\d)", re.I)
+
+
 def find_date(text: str) -> str | None:
     """Первая дата в строке в виде YYYY-MM-DD или YYYY-MM; None, если нет."""
     if not text:
@@ -136,6 +145,16 @@ def find_date(text: str) -> str | None:
     for m in _RU_DATE.finditer(text):
         try:
             return date(int(m.group(3)), _MONTHS_RU[m.group(2).lower()], int(m.group(1))).isoformat()
+        except (ValueError, KeyError):
+            continue
+    for m in _EN_DATE_DMY.finditer(text):
+        try:
+            return date(int(m.group(3)), _MONTHS_EN[m.group(2).lower()[:3]], int(m.group(1))).isoformat()
+        except (ValueError, KeyError):
+            continue
+    for m in _EN_DATE_MDY.finditer(text):
+        try:
+            return date(int(m.group(3)), _MONTHS_EN[m.group(1).lower()[:3]], int(m.group(2))).isoformat()
         except (ValueError, KeyError):
             continue
     return None
@@ -239,17 +258,17 @@ class Progress:
                 left = elapsed / self.done_weight * max(self.total_weight - self.done_weight, 0)
             else:
                 left = rate * (self.total - self.done)
-            print(f"  {self.label} {self.done}/{self.total}  ~{fmt_duration(rate)}/шт, осталось ~{fmt_duration(left)}"
+            print(trl("  {0} {1}/{2}  ~{3}/шт, осталось ~{4}", self.label, self.done, self.total, fmt_duration(rate), fmt_duration(left))
                   + (f"  {note}" if note else ""), flush=True)
 
 
 def fmt_duration(seconds: float) -> str:
     seconds = int(seconds)
     if seconds < 60:
-        return f"{seconds} с"
+        return trl("{0} с", seconds)
     if seconds < 3600:
-        return f"{seconds // 60} мин {seconds % 60:02d} с"
-    return f"{seconds // 3600} ч {(seconds % 3600) // 60:02d} мин"
+        return trl("{0} мин {1:02d} с", seconds // 60, seconds % 60)
+    return trl("{0} ч {1:02d} мин", seconds // 3600, seconds % 3600 // 60)
 
 
 def think_command(cfg, arg: str) -> str:
@@ -272,4 +291,4 @@ def think_command(cfg, arg: str) -> str:
 
 
 def warn(message: str) -> None:
-    print(f"ПРЕДУПРЕЖДЕНИЕ: {message}", file=sys.stderr, flush=True)
+    print(trl("ПРЕДУПРЕЖДЕНИЕ: {0}", message), file=sys.stderr, flush=True)

@@ -5,6 +5,10 @@
 """
 from __future__ import annotations
 
+import os as _os
+
+_os.environ.setdefault("LOCAL_COACH_LANG", "ru")      # публичная копия по умолчанию английская, тесты написаны на русском
+
 import contextlib
 import io
 import os
@@ -50,7 +54,14 @@ def answers(*items: str):
             return next(it)
         except StopIteration:
             raise EOFError from None
-    return mock.patch("builtins.input", fake)
+
+    @contextlib.contextmanager
+    def patched():
+        # stdin is replaced too: the code asks some questions only when stdin is a terminal (isatty),
+        # and the tests must not depend on whether they are run from a terminal or from CI
+        with mock.patch("builtins.input", fake), mock.patch("sys.stdin", io.StringIO()):
+            yield
+    return patched()
 
 
 class CoachTest(unittest.TestCase):

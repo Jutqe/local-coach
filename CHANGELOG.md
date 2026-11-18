@@ -2,6 +2,11 @@
 
 Versions are those of the private development line this repository is generated from. Dates are 2026.
 
+## 5.9 (Nov 18)
+- **English.** The whole tool now works in English: the prompts for the model, the terminal commands and messages, the reports, the web page (served with substituted strings) and the typed answers. `LOCAL_COACH_LANG=en|ru` chooses the language at startup (English is the default in this repository, Russian in the personal line it is generated from). Typed input accepts both languages in either mode: answer letters (a/i/s/w/h/d/l/x/u/n for registry items, c/p/u/n/s/q in the calibration dialogs, y/n/e/q for suggestions), yes/no/stop words, memory commands ("remember that ..."), body-double phrases ("for 50 minutes", "stay with me"), English dates ("May 1st, 2015") and review intervals ("in 3 months").
+- The translation (about 1000 interface strings, 295 web strings and the prompt set) was produced with a language model and checked by scripts, not by a native speaker. Known limits in English: the biography table parser and the "present tense" portrait fixer still expect Russian text, and answer quality with the English prompts has not been measured.
+- One working folder, one language: the prompt version includes the language, so after switching run `reextract`.
+
 ## 5.8 (Nov 14 to 18)
 - `LOCAL_COACH_HEAVY_MODEL` / `--heavy-model`: a separate, larger model for heavy work (fact extraction, registry naming and selection, hypotheses, people); chat and quick calls stay on the main model. Empty means everything runs on the main model as before.
 - 5.8.1: in the web review window the area of an item is a dropdown on the card, so a wrong area (set by the model during extraction) can be fixed with one click and undone. Rebuilding the registry does not reset it.

@@ -17,6 +17,7 @@ from . import store
 from .config import Config
 from .ollama import Ollama, OllamaError, embed_doc_text
 from .util import Progress, iso_now, warn
+from .i18n import trl
 
 try:  # pragma: no cover - зависит от окружения
     import numpy as np
@@ -100,7 +101,7 @@ def ensure_embed_identity(conn: sqlite3.Connection, cfg: Config) -> bool:
     if stored == cfg.embed_model:
         return False
     if stored:
-        warn(f"эмбеддинг-модель сменилась ({stored} → {cfg.embed_model}): пересчитываю все векторы и кластеры")
+        warn(trl("эмбеддинг-модель сменилась ({0} → {1}): пересчитываю все векторы и кластеры", stored, cfg.embed_model))
         for table in ("chunks", "facts", "user_marks", "currency_marks", "sessions"):
             conn.execute(f"UPDATE {table} SET embedding=NULL")
         conn.execute("UPDATE facts SET cluster_id=NULL")
@@ -115,20 +116,20 @@ def ensure_embed_identity(conn: sqlite3.Connection, cfg: Config) -> bool:
 def embed_missing(conn: sqlite3.Connection, llm: Ollama, cfg: Config) -> bool:
     """Досчитать векторы фрагментов и фактов. False — если эмбеддинг-модель недоступна."""
     jobs = (
-        ("фрагменты", "SELECT c.id, c.heading, c.body, n.title FROM chunks c JOIN notes n ON n.path=c.path "
+        (trl("фрагменты"), "SELECT c.id, c.heading, c.body, n.title FROM chunks c JOIN notes n ON n.path=c.path "
                       "WHERE c.embedding IS NULL AND n.status='indexed' ORDER BY c.id",
          lambda r: embed_doc_text((r["heading"] + "\n" if r["heading"] else "") + r["body"][:6000], r["title"]),
          "UPDATE chunks SET embedding=? WHERE id=?"),
-        ("факты", "SELECT id, claim FROM facts WHERE embedding IS NULL ORDER BY id",
+        (trl("факты"), "SELECT id, claim FROM facts WHERE embedding IS NULL ORDER BY id",
          lambda r: embed_doc_text(r["claim"]),
          "UPDATE facts SET embedding=? WHERE id=?"),
-        ("твои отметки", "SELECT id, claim FROM user_marks WHERE embedding IS NULL",
+        (trl("твои отметки"), "SELECT id, claim FROM user_marks WHERE embedding IS NULL",
          lambda r: embed_doc_text(r["claim"]),
          "UPDATE user_marks SET embedding=? WHERE id=?"),
-        ("отметки актуальности", "SELECT id, claim FROM currency_marks WHERE embedding IS NULL",
+        (trl("отметки актуальности"), "SELECT id, claim FROM currency_marks WHERE embedding IS NULL",
          lambda r: embed_doc_text(r["claim"]),
          "UPDATE currency_marks SET embedding=? WHERE id=?"),
-        ("сессии", "SELECT id, summary AS claim FROM sessions WHERE embedding IS NULL AND summary!=''",
+        (trl("сессии"), "SELECT id, summary AS claim FROM sessions WHERE embedding IS NULL AND summary!=''",
          lambda r: embed_doc_text(r["claim"]),
          "UPDATE sessions SET embedding=? WHERE id=?"),
     )
@@ -137,19 +138,18 @@ def embed_missing(conn: sqlite3.Connection, llm: Ollama, cfg: Config) -> bool:
         if not rows:
             continue
         batches = [rows[i:i + cfg.embed_batch] for i in range(0, len(rows), cfg.embed_batch)]
-        progress = Progress(len(batches), f"векторы ({label}), пакет", every=max(1, len(batches) // 20))
+        progress = Progress(len(batches), trl("векторы ({0}), пакет", label), every=max(1, len(batches) // 20))
         for batch in batches:
             try:
                 vectors = llm.embed([to_text(r) for r in batch])
             except OllamaError as exc:
-                warn(f"векторный этап прерван: {exc}. Поиск будет только полнотекстовым до следующего запуска.")
+                warn(trl("векторный этап прерван: {0}. Поиск будет только полнотекстовым до следующего запуска.", exc))
                 return False
             dim = store.get_meta(conn, "embed_dim")
             if dim is None:
                 store.set_meta(conn, "embed_dim", str(len(vectors[0])))
             elif any(len(v) != int(dim) for v in vectors):
-                raise OllamaError(f"размерность векторов изменилась ({dim} → {len(vectors[0])}): сменилась модель? "
-                                  "Запусти update ещё раз — векторы пересчитаются.")
+                raise OllamaError(trl("размерность векторов изменилась ({0} → {1}): сменилась модель? Запусти update ещё раз — векторы пересчитаются.", dim, len(vectors[0])))
             for r, v in zip(batch, vectors):
                 conn.execute(update, (pack(v), r["id"]))
             conn.commit()
@@ -219,9 +219,8 @@ def update_clusters(conn: sqlite3.Connection, cfg: Config, quiet: bool = False) 
                              "AND user_state!='rejected' AND embedding IS NOT NULL ORDER BY id").fetchall()
     stats = {"assigned": 0, "created": 0, "touched": 0, "removed": 0}
     if np is None and len(new_facts) > 10000 and not quiet:
-        warn(f"склеиваю {len(new_facts)} фактов без numpy — это может занять десятки минут. "
-             "Ускорить: apt install python3-numpy")
-    progress = (Progress(len(new_facts), "кластеризация, факт", every=max(1, len(new_facts) // 20))
+        warn(trl("склеиваю {0} фактов без numpy — это может занять десятки минут. Ускорить: apt install python3-numpy", len(new_facts)))
+    progress = (Progress(len(new_facts), trl("кластеризация, факт"), every=max(1, len(new_facts) // 20))
                 if new_facts and not quiet else None)
     now = iso_now()
     for row in new_facts:

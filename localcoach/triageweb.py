@@ -15,6 +15,7 @@ from . import guard, inventory, store
 from .config import DOMAIN_TITLES, LR_STATUS_TITLES, LR_TYPE_TITLES, PRIVATE_DOMAINS
 from .ollama import Ollama
 from .util import iso_now, today
+from .i18n import trl
 
 PAGE = 10
 STATUSES = ("active", "incubating", "someday", "waiting", "delegated", "completed", "abandoned", "archived",
@@ -44,7 +45,7 @@ def _item(r: sqlite3.Row) -> dict[str, Any]:
             "type_title": LR_TYPE_TITLES.get(r["type"], r["type"]), "area": r["domain"],
             "area_title": DOMAIN_TITLES.get(r["domain"], r["domain"]), "status": r["status"],
             "status_title": LR_STATUS_TITLES.get(r["status"], r["status"]), "resurfaced": bool(r["resurfaced"]),
-            "where": inventory.span(r) if r["origin"] == "memory" else "из разговора"}
+            "where": inventory.span(r) if r["origin"] == "memory" else trl("из разговора")}
 
 
 def waiting(conn: sqlite3.Connection) -> int:

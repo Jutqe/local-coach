@@ -18,17 +18,22 @@ from .config import Config
 from .ollama import Ollama, OllamaError
 from .prompts import PEOPLE_SCHEMA, PEOPLE_SYSTEM
 from .util import atomic_write, digest, iso_now, normalize_time_ref
+from .i18n import ru_key, trl
 
 BATCH = 30
 ASK_MIN_MENTIONS = 3
 BLOCK_LIMIT = 8
-STATUS_TITLES = {"current": "сейчас в твоей жизни", "past": "в прошлом", "unknown": "", "ignored": ""}
+STATUS_TITLES = {"current": trl("сейчас в твоей жизни"), "past": trl("в прошлом"), "unknown": "", "ignored": ""}
 
 # Предварительный отбор: без заглавного слова (кроме «Автор») и без слова-роли модель не спрашиваем.
 _CAPITAL = re.compile(r"(?<![.!?]\s)(?<!^)\b[А-ЯЁA-Z][а-яёa-z]{2,}")
 _ROLE = re.compile(r"(?i)\b(?:мам|пап|мать|матер|отец|отц|брат|сестр|жен[аыуеой]\b|муж|сын|доч|бабушк|дедушк|"
                    r"друг|друз|подруг|коллег|начальни|руководител|партн[её]р|девушк|парн[еяю]|т[её]щ|свекр|"
-                   r"племянни|т[её]т|дяд|сосед|врач|психолог|терапевт|тренер|учител|наставни|реб[её]н|дет[иейям])")
+                   r"племянни|т[её]т|дяд|сосед|врач|психолог|терапевт|тренер|учител|наставни|реб[её]н|дет[иейям])|"
+                   r"\b(?:mom|mum|mother|dad|father|brother|sister|wife|husband|son|daughter|grandma|grandpa|grandmother|"
+                   r"grandfather|friend|colleague|coworker|boss|manager|partner|girlfriend|boyfriend|mother-in-law|"
+                   r"father-in-law|nephew|niece|uncle|aunt|cousin|neighbou?r|doctor|therapist|psychologist|coach|teacher|"
+                   r"mentor|child|children|kids?)\b")
 
 
 def _fold(text: str) -> str:
@@ -51,8 +56,8 @@ def _mentions_name(name: str, text: str) -> bool:
 
 
 def _maybe_people(claim: str) -> bool:
-    body = re.sub(r"^\s*Автор\w*[:\s]*", "", claim)
-    return bool(_ROLE.search(body) or any(m.group(0) != "Автор" for m in _CAPITAL.finditer(" " + body)))
+    body = re.sub(r"^\s*(?:Автор\w*|The author|Author)[:\s]*", "", claim)
+    return bool(_ROLE.search(body) or any(m.group(0) not in ("Автор", "Author") for m in _CAPITAL.finditer(" " + body)))
 
 
 def _canonical(conn: sqlite3.Connection, pid: int) -> int:
@@ -106,7 +111,7 @@ def update(conn: sqlite3.Connection, llm: Ollama | None, cfg: Config, quiet: boo
     for start in range(0, len(todo), BATCH):
         batch = todo[start:start + BATCH]
         if not quiet:
-            print(f"  люди: {min(start + BATCH, len(todo))}/{len(todo)}", flush=True)
+            print(trl("  люди: {0}/{1}", min(start + BATCH, len(todo)), len(todo)), flush=True)
         ids = {f"F{r['id']}": r for r in batch}
         text = "\n".join(f"F{r['id']} ({(r['event_date'] or '')[:7] or 'без даты'}): {r['claim']}" for r in batch)
         try:
@@ -122,7 +127,7 @@ def update(conn: sqlite3.Connection, llm: Ollama | None, cfg: Config, quiet: boo
                 if not isinstance(p, dict):
                     continue
                 name = re.sub(r"\s+", " ", str(p.get("name") or "")).strip(" .,«»\"'")
-                if not 2 <= len(name) <= 40 or _fold(name).startswith("автор") or guard.text_hold(name):
+                if not 2 <= len(name) <= 40 or _fold(name).startswith(("автор", "author", "the author")) or guard.text_hold(name):
                     continue
                 # Имя должно быть в тексте утверждения — иначе модель его придумала.
                 if not _mentions_name(name, fact["claim"]):
@@ -154,12 +159,12 @@ def _years(row: sqlite3.Row) -> str:
 
 
 def _line(row: sqlite3.Row) -> str:
-    parts = [row["relation"] + (" (сказал ты)" if row["relation_src"] == "user" else "")] if row["relation"] else []
+    parts = [row["relation"] + (trl(" (сказал ты)") if row["relation_src"] == "user" else "")] if row["relation"] else []
     if row["mentions"]:
-        parts.append(f"упоминаний {row['mentions']}" + (f", {_years(row)}" if _years(row) else ""))
+        parts.append(trl("упоминаний {0}", row['mentions']) + (f", {_years(row)}" if _years(row) else ""))
     status = STATUS_TITLES.get(row["status"], "")
     if row["status"] == "past" and row["until"]:
-        status += f" (до {row['until']})"
+        status += trl(" (до {0})", row['until'])
     if status:
         parts.append(status)
     if row["note"]:
@@ -183,7 +188,7 @@ def coach_block(conn: sqlite3.Connection, user_text: str, fact_ids: list[int]) -
         chosen += [p for p in people if p["id"] in linked and p not in chosen]
     if not chosen:
         return ""
-    return ("ЛЮДИ (кто есть кто — из заметок и его ответов; одно имя в разные годы может быть разными людьми):\n"
+    return (trl("ЛЮДИ (кто есть кто — из заметок и его ответов; одно имя в разные годы может быть разными людьми):\n")
             + "\n".join(f"- {_line(p)}" for p in chosen[:BLOCK_LIMIT]))
 
 
@@ -211,24 +216,23 @@ def merge(conn: sqlite3.Connection, src: int, dst: int) -> None:
     refresh_stats(conn)
 
 
-LEGEND = """Ответы:
-  с — сейчас в моей жизни
-  б — в прошлом (можно с годом: «б 2019»)
-  к текст — кто это: «к младшая сестра», «к коллега с прошлой работы»
-  = имя — это тот же человек, что … («= Персона»)
-  н — не человек или ошибка (больше не покажу)
-  п — пропустить,  в — закончить
-Своими словами («сестра, видимся каждую неделю») — запишу как «кто это»."""
+LEGEND = trl("Ответы:\n"
+             "  с — сейчас в моей жизни\n"
+             "  б — в прошлом (можно с годом: «б 2019»)\n"
+             "  к текст — кто это: «к младшая сестра», «к коллега с прошлой работы»\n"
+             "  = имя — это тот же человек, что … («= Персона»)\n"
+             "  н — не человек или ошибка (больше не покажу)\n"
+             "  п — пропустить,  в — закончить\n"
+             "Своими словами («сестра, видимся каждую неделю») — запишу как «кто это».")
 
 
 def ask(conn: sqlite3.Connection, limit: int = 15, include_skipped: bool = False) -> int:
     """Спросить про людей, о которых известно мало. Возвращает число ответов."""
     items = queue(conn, include_skipped)
     if not items:
-        print("Вопросов про людей нет.\n")
+        print(trl("Вопросов про людей нет.\n"))
         return 0
-    print(f"Людей, про которых неясно, кто это и есть ли они сейчас в твоей жизни: {len(items)}. "
-          f"За раз — до {limit}.\n")
+    print(trl("Людей, про которых неясно, кто это и есть ли они сейчас в твоей жизни: {0}. За раз — до {1}.\n", len(items), limit))
     print(LEGEND + "\n")
     answered = 0
     for row in items:
@@ -241,12 +245,12 @@ def ask(conn: sqlite3.Connection, limit: int = 15, include_skipped: bool = False
         for ex in _examples(conn, row["id"]):
             print(f"  · {ex['claim']}" + (f" ({ex['event_date'][:7]})" if ex["event_date"] else ""))
         try:
-            ans = input("  > ").strip()
+            ans = ru_key(input("  > ").strip())
         except (EOFError, KeyboardInterrupt):
             print()
             break
         low = ans.casefold()
-        if low in ("в", "выход", "q"):
+        if low in ("в", "выход", "q", "quit", "exit"):
             break
         if not ans:
             continue
@@ -257,64 +261,65 @@ def ask(conn: sqlite3.Connection, limit: int = 15, include_skipped: bool = False
             continue
         if low == "с":
             conn.execute("UPDATE people SET status='current', updated_at=? WHERE id=?", (now, row["id"]))
-            msg = "сейчас в твоей жизни"
+            msg = trl("сейчас в твоей жизни")
         elif low[:1] == "б" and (len(low) == 1 or not low[1].isalpha()):
             until = normalize_time_ref(ans[1:].strip()) or None
             conn.execute("UPDATE people SET status='past', until=?, updated_at=? WHERE id=?", (until, now, row["id"]))
-            msg = "в прошлом" + (f" (до {until})" if until else "")
+            msg = trl("в прошлом") + (trl(" (до {0})", until) if until else "")
         elif low == "н":
             conn.execute("UPDATE people SET status='ignored', updated_at=? WHERE id=?", (now, row["id"]))
             conn.execute("DELETE FROM fact_people WHERE person_id=?", (row["id"],))
-            msg = "не человек — больше не покажу"
+            msg = trl("не человек — больше не покажу")
         elif ans.startswith("="):
             other = ans[1:].strip()
             target = conn.execute("SELECT id FROM people WHERE name=? COLLATE NOCASE", (other,)).fetchone()
             if not other or target is None:
-                print(f"  Не нашёл «{other}» среди людей. Можно ответить «к …», чтобы просто записать, кто это.\n")
+                print(trl("  Не нашёл «{0}» среди людей. Можно ответить «к …», чтобы просто записать, кто это.\n", other))
                 continue
             dst = _canonical(conn, target["id"])
             merge(conn, row["id"], dst)
-            msg = f"тот же человек, что {store.scalar(conn, 'SELECT name FROM people WHERE id=?', (dst,))}"
+            msg = trl("тот же человек, что {0}", store.scalar(conn, 'SELECT name FROM people WHERE id=?', (dst,)))
         else:
             text = ans[1:].strip() if low[:1] == "к" and (len(low) == 1 or low[1] == " ") else ans
             if not text or guard.text_hold(text):
                 continue
             conn.execute("UPDATE people SET relation=?, relation_src='user', updated_at=? WHERE id=?",
                          (text[:80], now, row["id"]))
-            msg = f"кто это: {text[:80]}"
+            msg = trl("кто это: {0}", text[:80])
             try:
-                more = input("  Сейчас в твоей жизни? (с — да, б — в прошлом, Enter — не знаю): ").strip().casefold()
+                more = input(trl("  Сейчас в твоей жизни? (с — да, б — в прошлом, Enter — не знаю): ")).strip().casefold()
             except (EOFError, KeyboardInterrupt):
                 more = ""
+            more = ru_key(more)
             if more == "с":
                 conn.execute("UPDATE people SET status='current' WHERE id=?", (row["id"],))
-                msg += "; сейчас в жизни"
+                msg += trl("; сейчас в жизни")
             elif more[:1] == "б":
                 until = normalize_time_ref(more[1:].strip()) or None
                 conn.execute("UPDATE people SET status='past', until=? WHERE id=?", (until, row["id"]))
-                msg += "; в прошлом"
+                msg += trl("; в прошлом")
         conn.commit()
         answered += 1
         print(f"  ✓ {msg}\n")
     left = len(queue(conn))
-    print(f"Ответов: {answered}. Осталось вопросов про людей: {left}.\n")
+    print(trl("Ответов: {0}. Осталось вопросов про людей: {1}.\n", answered, left))
     return answered
 
 
 def print_list(conn: sqlite3.Connection) -> None:
     rows = active(conn)
     if not rows:
-        print("Людей пока нет — они появятся после python3 coach.py update.")
+        print(trl("Людей пока нет — они появятся после python3 coach.py update."))
         return
     for r in rows:
         print(f"  {_line(r)}")
-    print(f"\nВсего: {len(rows)}. Уточнить: python3 coach.py people (или /people в чате).")
+    print(trl("\nВсего: {0}. Уточнить: python3 coach.py people (или /people в чате).", len(rows)))
 
 
 def write_md(conn: sqlite3.Connection, path: Path) -> None:
     rows = active(conn)
-    lines = ["# Люди", "", "Кто упоминается в заметках. Уточнить: `python3 coach.py people`.", ""]
-    lines += [f"- {_line(r)}" for r in rows] or ["Пока никого."]
+    lines = [trl("# Люди"), "", trl("Кто упоминается в заметках. Уточнить: `python3 coach.py people`."), ""]
+    lines += [f"- {_line(r)}" for r in rows] or [trl("Пока никого.")]
     atomic_write(path, "\n".join(lines) + "\n")
 
 

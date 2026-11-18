@@ -14,6 +14,7 @@ from .prompts import EXTRACT_SYSTEM, PROMPT_VERSION, extract_schema, extract_use
 from .util import (Progress, year_in_text, digest, dumps, iso_now, loads, normalize_text, normalize_time_ref, quote_match,
                    sha256_text, stable_json)
 from .vault import Note
+from .i18n import trl
 
 GOAL_LIKE = {"goal", "decision", "open_loop"}
 RELIABLE_DATE_SOURCES = {"frontmatter", "filename"}
@@ -169,17 +170,15 @@ def _upsert_note(conn, path, fields, status, reason, now) -> None:
 
 def _date_line(note_date: str | None, date_source: str, chunk_date: str | None) -> str:
     if date_source in RELIABLE_DATE_SOURCES and note_date:
-        line = f"Дата заметки: {note_date}."
+        line = trl("Дата заметки: {0}.", note_date)
     elif date_source == "import":
-        line = ("Это документ, который пользователь загрузил сам (например, биография или таблица). "
-                "Дата загрузки не означает дату событий: время бери только из самого текста.")
+        line = (trl("Это документ, который пользователь загрузил сам (например, биография или таблица). Дата загрузки не означает дату событий: время бери только из самого текста."))
     elif date_source == "mtime" and note_date:
-        line = (f"Дата написания неизвестна; файл последний раз изменён {note_date} — "
-                "заметка могла быть написана раньше.")
+        line = (trl("Дата написания неизвестна; файл последний раз изменён {0} — заметка могла быть написана раньше.", note_date))
     else:
-        line = "Дата заметки неизвестна."
+        line = trl("Дата заметки неизвестна.")
     if chunk_date and chunk_date != note_date:
-        line += f" Раздел датирован: {chunk_date}."
+        line += trl(" Раздел датирован: {0}.", chunk_date)
     return line
 
 
@@ -190,13 +189,13 @@ def extract_pending(conn: sqlite3.Connection, llm: Ollama, cfg: Config) -> tuple
         "WHERE n.status='indexed' AND c.status IN ('pending','error') AND c.attempts < ? "
         "ORDER BY c.path, c.idx", (cfg.max_extract_attempts,)).fetchall()
     if not rows:
-        print("  Новых фрагментов для извлечения нет.")
+        print(trl("  Новых фрагментов для извлечения нет."))
         return 0, 0
-    print(f"  Фрагментов к извлечению: {len(rows)}")
+    print(trl("  Фрагментов к извлечению: {0}", len(rows)))
     # Время извлечения растёт с длиной фрагмента, поэтому прогноз считается по символам
     # (плюс постоянная часть на вызов), а не по числу фрагментов.
     weight = lambda r: len(r["body"]) + CALL_OVERHEAD_CHARS  # noqa: E731
-    progress = Progress(len(rows), "фрагмент", total_weight=sum(weight(r) for r in rows))
+    progress = Progress(len(rows), trl("фрагмент"), total_weight=sum(weight(r) for r in rows))
     ok = failed = 0
     spent = 0.0
     chars = 0
@@ -211,14 +210,14 @@ def extract_pending(conn: sqlite3.Connection, llm: Ollama, cfg: Config) -> tuple
             ok += 1
             if ok % 10 == 0 or ok == 3:
                 _save_rate(conn, spent, ok, chars)
-            progress.step(f"фактов: {n}", weight(row))
+            progress.step(trl("фактов: {0}", n), weight(row))
         except (OllamaError, OSError, ValueError) as exc:
             conn.execute("UPDATE chunks SET status='error', attempts=attempts+1, error=?, updated_at=? WHERE id=?",
                          (f"{type(exc).__name__}: {str(exc)[:300]}", iso_now(), row["id"]))
             conn.commit()
             failed += 1
             # Текст ошибки не содержит содержимого заметки: только тип и служебное сообщение.
-            progress.step(f"ОШИБКА ({type(exc).__name__}), будет повтор при следующем запуске", weight(row))
+            progress.step(trl("ОШИБКА ({0}), будет повтор при следующем запуске", type(exc).__name__), weight(row))
     if ok:
         _save_rate(conn, spent, ok, chars)
     return ok, failed
@@ -267,7 +266,7 @@ def _call_extract(llm: Ollama, cfg: Config, meta: dict[str, Any], body: str, sen
         if halves is None:
             # Ответ не влез, а делить нечего: просим меньше фактов, а не повторяем тот же запрос.
             sent.append(len(body) + CALL_OVERHEAD_CHARS)
-            return llm.chat_json(EXTRACT_SYSTEM + "\n\nОграничься 8 самыми важными фактами.", user,
+            return llm.chat_json(EXTRACT_SYSTEM + trl("\n\nОграничься 8 самыми важными фактами."), user,
                                  extract_schema(8), think=False, num_predict=cfg.extract_predict, heavy=True)
         raw, saturated = {"summary": ""}, True
     halves = _halves(body) if saturated and depth < SPLIT_DEPTH else None

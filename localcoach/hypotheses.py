@@ -18,12 +18,13 @@ from .config import Config
 from .ollama import Ollama, OllamaError, TruncatedError, embed_doc_text
 from .prompts import LR_HYPOTHESIS_SCHEMA, LR_HYPOTHESIS_SYSTEM
 from .util import digest, dumps, iso_now, loads, today, warn
+from .i18n import trl
 
 SAME = 0.85
 BATCH = 8
-STATUS_TITLES = {"new": "новая", "testing": "проверяется", "pattern": "подтверждена как повторяемость",
-                 "rejected": "отвергнута"}
-CONFIDENCE_TITLES = {"low": "низкая", "medium": "средняя", "high": "высокая"}
+STATUS_TITLES = {"new": trl("новая"), "testing": trl("проверяется"), "pattern": trl("подтверждена как повторяемость"),
+                 "rejected": trl("отвергнута")}
+CONFIDENCE_TITLES = {"low": trl("низкая"), "medium": trl("средняя"), "high": trl("высокая")}
 
 
 def _raw(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -50,7 +51,7 @@ def build(conn: sqlite3.Connection, llm: Ollama, cfg: Config, quiet: bool = Fals
         for i in range(0, len(texts), cfg.embed_batch):
             vecs += [vectors.normalize(v) for v in llm.embed(texts[i:i + cfg.embed_batch])]
     except OllamaError as exc:
-        warn(f"гипотезы: векторы не посчитаны ({exc}); повторный запуск продолжит.")
+        warn(trl("гипотезы: векторы не посчитаны ({0}); повторный запуск продолжит.", exc))
         return stats
     existing = [(r["id"], vectors.unpack(r["embedding"])) for r in
                 conn.execute("SELECT id, embedding FROM lr_hypotheses WHERE embedding IS NOT NULL")]
@@ -91,7 +92,7 @@ def build(conn: sqlite3.Connection, llm: Ollama, cfg: Config, quiet: bool = Fals
         try:
             res = _phrase(llm, batch)
         except OllamaError as exc:
-            warn(f"гипотезы: формулировка прервана ({exc}); повторный запуск продолжит.")
+            warn(trl("гипотезы: формулировка прервана ({0}); повторный запуск продолжит.", exc))
             break
         for j, g in enumerate(batch):
             got = res.get(j)
@@ -121,9 +122,9 @@ def build(conn: sqlite3.Connection, llm: Ollama, cfg: Config, quiet: bool = Fals
 
 def _phrase(llm: Ollama, batch: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     ids = {f"H{j + 1}": j for j in range(len(batch))}
-    user = "Гипотезы:\n\n" + "\n\n".join(
-        f"H{j + 1}: {g['text']}\n  цитаты: " + " | ".join(f"«{o['quote'][:160]}»" for o in g["obs"][:3])
-        + "\n  альтернатива из заметки: " + (next((a for a in g["alts"] if a), "–"))
+    user = trl("Гипотезы:\n\n") + "\n\n".join(
+        trl("H{0}: {1}\n  цитаты: ", j + 1, g['text']) + " | ".join(f"«{o['quote'][:160]}»" for o in g["obs"][:3])
+        + trl("\n  альтернатива из заметки: ") + (next((a for a in g["alts"] if a), "–"))
         for j, g in enumerate(batch))
     try:
         raw = llm.chat_json(LR_HYPOTHESIS_SYSTEM, user, LR_HYPOTHESIS_SCHEMA, num_predict=300 * len(batch) + 300,
@@ -161,20 +162,20 @@ def _ask(prompt: str) -> str | None:
 
 def show(r: sqlite3.Row) -> str:
     lines = [f"[H-{r['id']}] {r['text']}",
-             f"Статус: {STATUS_TITLES[r['status']]}; уверенность: {CONFIDENCE_TITLES[r['confidence']]}"]
+             trl("Статус: {0}; уверенность: {1}", STATUS_TITLES[r['status']], CONFIDENCE_TITLES[r['confidence']])]
     obs = loads(r["observations_json"], []) or []
     if obs:
-        lines.append("Наблюдения:")
+        lines.append(trl("Наблюдения:"))
         for o in obs[:4]:
             lines.append(f"  - «{o.get('quote', '')}»" + (f" («{o['title']}»" if o.get("title") else " (")
                          + (f", {o['date'][:7]})" if o.get("date") else ")"))
     alts = loads(r["alternatives_json"], []) or []
     if alts:
-        lines.append("Другие объяснения: " + "; ".join(alts))
+        lines.append(trl("Другие объяснения: ") + "; ".join(alts))
     if r["user_note"]:
-        lines.append(f"Твои слова раньше: {r['user_note'][-300:]}")
+        lines.append(trl("Твои слова раньше: {0}", r['user_note'][-300:]))
     if r["question"]:
-        lines.append(f"Вопрос для проверки: {r['question']}")
+        lines.append(trl("Вопрос для проверки: {0}", r['question']))
     return "\n".join(lines)
 
 
@@ -182,40 +183,40 @@ def review(conn: sqlite3.Connection, limit: int = 5) -> int:
     rows = conn.execute("SELECT * FROM lr_hypotheses WHERE status IN ('new', 'testing') "
                         "ORDER BY status='testing' DESC, confidence='medium' DESC, id LIMIT ?", (limit,)).fetchall()
     if not rows:
-        print("Гипотез для проверки нет. Новые появляются из заметок: python3 coach.py hypotheses build\n")
+        print(trl("Гипотез для проверки нет. Новые появляются из заметок: python3 coach.py hypotheses build\n"))
         return 0
-    print("Гипотезы – это предположения, не факты и не диагнозы. Отвечай, как видишь сам.\n"
-          "п – да, это повторяется; о – не про меня; т – пусть пока проверяется; или ответь на вопрос своими словами; "
-          "Enter – пропустить; «стоп» – закончить. На трудный вопрос можно не отвечать сейчас.\n")
+    print(trl("Гипотезы – это предположения, не факты и не диагнозы. Отвечай, как видишь сам.\n"
+              "п – да, это повторяется; о – не про меня; т – пусть пока проверяется; или ответь на вопрос своими словами; Enter – пропустить; «стоп» – закончить. На трудный вопрос можно не отвечать сейчас.\n"))
     n = 0
     for r in rows:
         print(show(r))
         ans = _ask("> ")
-        if ans is None or re.fullmatch(r"(стоп|хватит|/stop|q)", ans or "", re.I):
+        if ans is None or re.fullmatch(r"(стоп|хватит|/stop|q|stop|enough|quit|exit)", ans or "", re.I):
             break
         if not ans:
             print()
             continue
         if guard.text_hold(ans):
-            print("Не записал: похоже на пароль или токен.\n")
+            print(trl("Не записал: похоже на пароль или токен.\n"))
             continue
         key = ans.casefold().rstrip(".")
-        status, note = {"п": "pattern", "о": "rejected", "т": "testing"}.get(key, "testing"), ""
-        if key not in ("п", "о", "т"):
+        letters = {"п": "pattern", "о": "rejected", "т": "testing", "p": "pattern", "r": "rejected", "t": "testing"}
+        status, note = letters.get(key, "testing"), ""
+        if key not in letters:
             note = ans
         merged = "; ".join(x for x in (r["user_note"], f"{today()}: {note}" if note else "") if x)[-1500:]
         conn.execute("UPDATE lr_hypotheses SET status=?, user_note=?, checked_at=? WHERE id=?",
                      (status, merged, iso_now(), r["id"]))
         conn.commit()
         n += 1
-        print(f"Записал: {STATUS_TITLES[status]}.\n")
+        print(trl("Записал: {0}.\n", STATUS_TITLES[status]))
     return n
 
 
 def coach_lines(conn: sqlite3.Connection, limit: int = 5) -> list[str]:
     rows = conn.execute("SELECT text, status, user_note FROM lr_hypotheses WHERE status IN ('pattern', 'testing') "
                         "ORDER BY status='pattern' DESC, checked_at DESC LIMIT ?", (limit,)).fetchall()
-    return [f"- {r['text']} [{STATUS_TITLES[r['status']]}]" + (f"; его слова: {r['user_note'][-160:]}" if r["user_note"] else "")
+    return [f"- {r['text']} [{STATUS_TITLES[r['status']]}]" + (trl("; его слова: {0}", r['user_note'][-160:]) if r["user_note"] else "")
             for r in rows]
 
 

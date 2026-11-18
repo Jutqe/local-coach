@@ -12,12 +12,13 @@ import urllib.request
 from typing import Any, Callable, Iterator
 
 from .config import Config
+from .i18n import trl
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     # Перенаправление увело бы заметки на другой адрес — не следуем.
     def redirect_request(self, *_args, **_kwargs):
-        raise OllamaError("Ollama ответил перенаправлением на другой адрес — запрос не отправлен")
+        raise OllamaError(trl("Ollama ответил перенаправлением на другой адрес — запрос не отправлен"))
 
 
 # Локальный трафик не должен уходить через прокси из окружения.
@@ -32,14 +33,14 @@ def check_local_url(url: str) -> str | None:
     try:
         parts = urllib.parse.urlsplit(url)
         if parts.scheme not in ("http", "https") or not parts.hostname:
-            return "нужен адрес вида http://localhost:11434"
+            return trl("нужен адрес вида http://localhost:11434")
         infos = socket.getaddrinfo(parts.hostname, parts.port or 11434, proto=socket.IPPROTO_TCP)
     except (ValueError, OSError):
-        return f"не удалось разобрать адрес {url}"
+        return trl("не удалось разобрать адрес {0}", url)
     for info in infos:
         ip = ipaddress.ip_address(info[4][0].split("%")[0])
         if not (ip.is_loopback or ip.is_private or ip.is_link_local or ip in _TAILSCALE):
-            return f"{parts.hostname} — адрес вне домашней сети ({ip})"
+            return trl("{0} — адрес вне домашней сети ({1})", parts.hostname, ip)
     return None
 
 
@@ -157,7 +158,7 @@ class Ollama:
                 raise OllamaError(str(data["error"])[:300])
             content = (data.get("message") or {}).get("content", "")
             if data.get("done_reason") == "length":
-                raise TruncatedError(f"ответ обрезан на {data.get('eval_count')} токенах")
+                raise TruncatedError(trl("ответ обрезан на {0} токенах", data.get('eval_count')))
             try:
                 parsed = json.loads(content)
             except json.JSONDecodeError as exc:
@@ -165,11 +166,11 @@ class Ollama:
                 time.sleep(2)
                 continue
             if not isinstance(parsed, dict):
-                last = ValueError("ожидался JSON-объект")
+                last = ValueError(trl("ожидался JSON-объект"))
                 continue
             self._check_context(data)
             return parsed
-        raise OllamaError(f"нет корректного ответа после {attempts} попыток: {type(last).__name__}: {str(last)[:200]}")
+        raise OllamaError(trl("нет корректного ответа после {0} попыток: {1}: {2}", attempts, type(last).__name__, str(last)[:200]))
 
     def chat_stream(self, messages: list[dict[str, str]], *, think: bool = False,
                     num_predict: int = 1500, timeout: int = 600,
@@ -187,7 +188,7 @@ class Ollama:
                 try:
                     data = json.loads(raw.decode("utf-8", errors="replace"))
                 except json.JSONDecodeError as exc:
-                    raise OllamaError("поток ответа прервался") from exc
+                    raise OllamaError(trl("поток ответа прервался")) from exc
                 if data.get("error"):
                     raise OllamaError(str(data["error"])[:300])
                 if on_think and (data.get("message") or {}).get("thinking"):
@@ -203,7 +204,7 @@ class Ollama:
         # Ollama молча обрезает начало запроса, если он не влез в num_ctx.
         used = int(data.get("prompt_eval_count") or 0)
         if used >= self.cfg.num_ctx - 16:
-            print(f"  ПРЕДУПРЕЖДЕНИЕ: запрос занял весь контекст ({used} токенов) — начало могло быть обрезано",
+            print(trl("  ПРЕДУПРЕЖДЕНИЕ: запрос занял весь контекст ({0} токенов) — начало могло быть обрезано", used),
                   flush=True)
 
     # --- эмбеддинги ----------------------------------------------------------
@@ -217,13 +218,13 @@ class Ollama:
                 data = self._json("/api/embed", payload, timeout)
                 vectors = data.get("embeddings") or []
                 if len(vectors) != len(texts):
-                    raise OllamaError(f"ожидалось {len(texts)} векторов, пришло {len(vectors)}")
+                    raise OllamaError(trl("ожидалось {0} векторов, пришло {1}", len(texts), len(vectors)))
                 return [[float(x) for x in v] for v in vectors]
             except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError,
                     http.client.HTTPException) as exc:
                 last = exc
                 time.sleep(3 * (attempt + 1))
-        raise OllamaError(f"эмбеддинги недоступны: {last}")
+        raise OllamaError(trl("эмбеддинги недоступны: {0}", last))
 
 
 # Префиксы задач, с которыми обучена embeddinggemma.

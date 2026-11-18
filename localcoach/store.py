@@ -6,318 +6,318 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .util import dumps, iso_now, loads
+from .i18n import trl
 
 SCHEMA_VERSION = 2
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-
-CREATE TABLE IF NOT EXISTS notes (
-  path TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  sha256 TEXT NOT NULL,
-  size_bytes INTEGER NOT NULL,
-  mtime REAL NOT NULL,
-  note_date TEXT,
-  date_source TEXT NOT NULL,
-  tags_json TEXT NOT NULL DEFAULT '[]',
-  links_json TEXT NOT NULL DEFAULT '[]',
-  status TEXT NOT NULL,              -- indexed | security_hold | stale
-  hold_reason TEXT,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS chunks (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  path TEXT NOT NULL REFERENCES notes(path) ON DELETE CASCADE,
-  idx INTEGER NOT NULL,
-  char_start INTEGER NOT NULL,
-  char_end INTEGER NOT NULL,
-  line_start INTEGER NOT NULL,
-  line_end INTEGER NOT NULL,
-  heading TEXT NOT NULL DEFAULT '',
-  chunk_date TEXT,
-  sha256 TEXT NOT NULL,
-  body TEXT NOT NULL,
-  summary TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'pending',   -- pending | done | imported | error
-  attempts INTEGER NOT NULL DEFAULT 0,
-  error TEXT,
-  embedding BLOB,
-  updated_at TEXT NOT NULL,
-  UNIQUE(path, idx)
-);
-CREATE INDEX IF NOT EXISTS idx_chunks_status ON chunks(status);
-CREATE INDEX IF NOT EXISTS idx_chunks_sha ON chunks(sha256);
-
-CREATE TABLE IF NOT EXISTS facts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  chunk_id INTEGER REFERENCES chunks(id) ON DELETE SET NULL,
-  path TEXT,                          -- NULL для фактов из диалога
-  source_ref TEXT NOT NULL,           -- путь#Lx-Ly или session:N
-  origin TEXT NOT NULL,               -- note | v3_import | chat | session
-  claim TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  domain TEXT NOT NULL,
-  subject TEXT NOT NULL DEFAULT 'self',
-  explicitness TEXT NOT NULL DEFAULT 'explicit',
-  intent_status TEXT NOT NULL DEFAULT 'none',
-  event_date TEXT,                    -- когда это было (по тексту или дате заметки)
-  note_date TEXT,
-  date_reliable INTEGER NOT NULL DEFAULT 1,
-  evidence_quote TEXT NOT NULL DEFAULT '',
-  quote_match TEXT NOT NULL DEFAULT 'none',   -- exact | partial | none
-  sensitivity TEXT NOT NULL DEFAULT 'normal',
-  is_project INTEGER NOT NULL DEFAULT 0,
-  user_state TEXT NOT NULL DEFAULT 'none',    -- none | confirmed | rejected
-  cluster_id INTEGER,
-  embedding BLOB,
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_facts_path ON facts(path);
-CREATE INDEX IF NOT EXISTS idx_facts_cluster ON facts(cluster_id);
-CREATE INDEX IF NOT EXISTS idx_facts_chunk ON facts(chunk_id);
-
-CREATE TABLE IF NOT EXISTS hypotheses_raw (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  chunk_id INTEGER REFERENCES chunks(id) ON DELETE CASCADE,
-  path TEXT NOT NULL,
-  source_ref TEXT NOT NULL,
-  hypothesis TEXT NOT NULL,
-  evidence_quote TEXT NOT NULL,
-  alternative TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_hyp_chunk ON hypotheses_raw(chunk_id);
-CREATE INDEX IF NOT EXISTS idx_hyp_path ON hypotheses_raw(path);
-
-CREATE TABLE IF NOT EXISTS clusters (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  domain TEXT NOT NULL,
-  centroid BLOB,
-  size INTEGER NOT NULL DEFAULT 0,
-  support_notes INTEGER NOT NULL DEFAULT 0,
-  first_date TEXT,
-  last_date TEXT,
-  head_fact_id INTEGER,              -- самый свежий надёжный факт кластера
-  score REAL NOT NULL DEFAULT 0,
-  updated_at TEXT NOT NULL
-);
-
--- Результаты синтеза (домены, профиль, аудит) с отпечатком входа для кэша.
-CREATE TABLE IF NOT EXISTS artifacts (
-  stage TEXT NOT NULL,
-  key TEXT NOT NULL,
-  fingerprint TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  PRIMARY KEY(stage, key)
-);
-
-CREATE TABLE IF NOT EXISTS sessions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  started_at TEXT NOT NULL,
-  ended_at TEXT,
-  title TEXT NOT NULL DEFAULT '',
-  summary TEXT NOT NULL DEFAULT '',
-  agreements_json TEXT NOT NULL DEFAULT '[]',
-  embedding BLOB
-);
-CREATE TABLE IF NOT EXISTS turns (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  role TEXT NOT NULL,                -- user | assistant
-  content TEXT NOT NULL,
-  refs_json TEXT NOT NULL DEFAULT '[]',
-  created_at TEXT NOT NULL
-);
-
--- Предложения в память из диалогов и вопросы аудита: ждут решения пользователя.
-CREATE TABLE IF NOT EXISTS candidates (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id INTEGER,
-  source TEXT NOT NULL,              -- chat | audit
-  claim TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  domain TEXT NOT NULL DEFAULT 'other',
-  reason TEXT NOT NULL DEFAULT '',
-  target_fact_id INTEGER,            -- для вопросов аудита: о каком факте речь
-  status TEXT NOT NULL DEFAULT 'pending',   -- pending | accepted | rejected | skipped
-  created_at TEXT NOT NULL,
-  decided_at TEXT
-);
-
--- Решения пользователя по утверждениям (подтвердил / отверг). Хранятся отдельно от
--- фактов, поэтому переживают повторное извлечение заметок: новые факты, близкие
--- по смыслу, получают ту же отметку.
-CREATE TABLE IF NOT EXISTS user_marks (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  claim TEXT NOT NULL,
-  mark TEXT NOT NULL,                -- confirmed | rejected
-  embedding BLOB,
-  created_at TEXT NOT NULL
-);
-
--- Договорённости из разговоров: что человек решил сделать, со сроком и статусом.
-CREATE TABLE IF NOT EXISTS commitments (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id INTEGER,
-  text TEXT NOT NULL,
-  due TEXT,                          -- срок, если звучал (ГГГГ-ММ-ДД)
-  status TEXT NOT NULL DEFAULT 'open',   -- open | done | dropped
-  note TEXT NOT NULL DEFAULT '',     -- как продвигается, почему бросил
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_commitments_status ON commitments(status);
-
--- Чек-ин: короткие ответы «как ты / что главное / что мешает» (своими словами).
-CREATE TABLE IF NOT EXISTS checkins (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  mood INTEGER,                      -- 1..10, если назвал
-  answers_json TEXT NOT NULL,        -- {"mood": "...", "focus": "...", "worry": "..."}
-  created_at TEXT NOT NULL
-);
-
--- Люди из заметок и ответов. Строка живёт по имени и переживает повторное извлечение:
--- твои ответы (кто это, в жизни ли сейчас) не теряются; связи с фактами пересобираются.
-CREATE TABLE IF NOT EXISTS people (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  relation TEXT NOT NULL DEFAULT '',
-  relation_src TEXT NOT NULL DEFAULT '',   -- model | user
-  status TEXT NOT NULL DEFAULT 'unknown',  -- current | past | unknown | ignored (не человек / ошибка)
-  until TEXT,                              -- для past: примерно когда
-  note TEXT NOT NULL DEFAULT '',
-  merged_into INTEGER,                     -- это тот же человек, что people.id
-  mentions INTEGER NOT NULL DEFAULT 0,
-  first_date TEXT,
-  last_date TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_people_name ON people(name COLLATE NOCASE);
-CREATE TABLE IF NOT EXISTS fact_people (
-  fact_id INTEGER NOT NULL,
-  person_id INTEGER NOT NULL,
-  PRIMARY KEY (fact_id, person_id)
-);
-CREATE INDEX IF NOT EXISTS idx_fact_people_person ON fact_people(person_id);
-
--- Режим присутствия (body double): над чем и сколько человек работал с коучем «рядом».
-CREATE TABLE IF NOT EXISTS focus_sessions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id INTEGER,
-  task TEXT NOT NULL DEFAULT '',
-  started_at TEXT NOT NULL,
-  ended_at TEXT,
-  minutes INTEGER NOT NULL DEFAULT 0
-);
-
--- Оценка качества: твои вердикты по выборке. Хранится ключ пункта, а не сам текст,
--- поэтому отчёт состоит только из чисел и его можно пересылать.
-CREATE TABLE IF NOT EXISTS eval_marks (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  target TEXT NOT NULL,              -- currency | fact | profile | reply
-  item_key TEXT NOT NULL,            -- хэш пункта: один пункт не показывается дважды
-  breakdown TEXT NOT NULL DEFAULT '',-- разрез отчёта: раздел профиля, источник актуальности, тип факта
-  verdict TEXT NOT NULL,
-  version TEXT NOT NULL,             -- версия кода / промптов / модель
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_eval_target ON eval_marks(target, item_key);
-
--- Актуальность: что из памяти верно сейчас, а что было раньше. Решения хранятся по
--- формулировке (как user_marks) и переживают повторное извлечение заметок.
-CREATE TABLE IF NOT EXISTS currency_marks (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  claim TEXT NOT NULL,
-  status TEXT NOT NULL,              -- current | past
-  until TEXT,                        -- когда примерно закончилось (для past)
-  period TEXT,                       -- когда это было, если известно («2012–2016»)
-  source TEXT NOT NULL,              -- user — ответ человека; timeline — сверка с биографией и ответами
-  note TEXT NOT NULL DEFAULT '',
-  embedding BLOB,
-  created_at TEXT NOT NULL
-);
-
--- Life Reset: реестр накопленного. Пункт живёт по смыслу (название + суть + вектор) и
--- переживает повторное извлечение заметок: на `inventory build` новые группы фактов
--- сверяются с пунктами по вектору, статус и история решений не теряются.
-CREATE TABLE IF NOT EXISTS lr_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  title TEXT NOT NULL,
-  type TEXT NOT NULL,                 -- commitment | project | idea | wish | question | situation | routine | material | experience
-  status TEXT NOT NULL DEFAULT 'inbox',
-  domain TEXT NOT NULL DEFAULT 'other',
-  summary TEXT NOT NULL DEFAULT '',
-  want TEXT NOT NULL DEFAULT '',      -- исходное желание: чего тогда хотелось
-  hint TEXT NOT NULL DEFAULT '',      -- что видно по памяти (кодом): «в заметках отмечено как сделанное»
-  origin TEXT NOT NULL DEFAULT 'memory',   -- memory | chat
-  sensitive INTEGER NOT NULL DEFAULT 0,
-  first_date TEXT,
-  last_date TEXT,                     -- последнее упоминание в заметках и разговорах
-  mentions INTEGER NOT NULL DEFAULT 0,
-  notes_count INTEGER NOT NULL DEFAULT 0,
-  next_step TEXT NOT NULL DEFAULT '',
-  review_on TEXT,                     -- когда пересмотреть (someday / incubating / waiting)
-  touched TEXT,                       -- когда последний раз менялся файл заметки-источника (для заметок без дат)
-  resurfaced INTEGER NOT NULL DEFAULT 0,   -- закрытый пункт снова появился в заметках
-  src_sig TEXT,                       -- отпечаток проектных заметок-источников на момент решения
-  merged_into INTEGER,
-  fact_ids_json TEXT NOT NULL DEFAULT '[]',
-  paths_json TEXT NOT NULL DEFAULT '[]',
-  anchors_json TEXT NOT NULL DEFAULT '[]',  -- «note:путь»: проектная заметка – всегда этот пункт, как бы её ни назвали
-  embedding BLOB,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  decided_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_lr_items_status ON lr_items(status);
-
--- Журнал решений: исходное состояние, предложение коуча, решение человека и причина.
-CREATE TABLE IF NOT EXISTS lr_decisions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  item_id INTEGER NOT NULL,
-  from_status TEXT NOT NULL,
-  to_status TEXT NOT NULL,
-  proposal TEXT NOT NULL DEFAULT '',  -- что предложил коуч (если предлагал)
-  answer TEXT NOT NULL DEFAULT '',    -- ответ человека своими словами
-  reason TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_lr_decisions_item ON lr_decisions(item_id);
-
--- Аудит жизни по областям: один раунд — одна дата, по строке на область.
-CREATE TABLE IF NOT EXISTS lr_audit (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  round INTEGER NOT NULL,
-  area TEXT NOT NULL,
-  satisfaction INTEGER,               -- 1..10: насколько устраивает сейчас
-  importance INTEGER,                 -- 1..10: насколько важно
-  change TEXT NOT NULL DEFAULT '',    -- yes | no | maybe: хочу ли менять
-  nature TEXT NOT NULL DEFAULT '',    -- problem | should | '': настоящая проблема или «так должно быть»
-  note TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL,
-  UNIQUE(round, area)
-);
-
--- Психологические гипотезы: не факты и не диагнозы. Подтверждённая — это описание
--- повторяемости, которое человек признал, а не черта личности.
-CREATE TABLE IF NOT EXISTS lr_hypotheses (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  text TEXT NOT NULL,
-  observations_json TEXT NOT NULL DEFAULT '[]',   -- [{"quote", "ref", "date"}]
-  alternatives_json TEXT NOT NULL DEFAULT '[]',
-  question TEXT NOT NULL DEFAULT '',  -- вопрос для проверки
-  confidence TEXT NOT NULL DEFAULT 'low',          -- low | medium | high
-  status TEXT NOT NULL DEFAULT 'new',              -- new | testing | pattern | rejected
-  user_note TEXT NOT NULL DEFAULT '',
-  embedding BLOB,
-  created_at TEXT NOT NULL,
-  checked_at TEXT
-);
-"""
+SCHEMA = trl("\n"
+             "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);\n"
+             "\n"
+             "CREATE TABLE IF NOT EXISTS notes (\n"
+             "  path TEXT PRIMARY KEY,\n"
+             "  title TEXT NOT NULL,\n"
+             "  sha256 TEXT NOT NULL,\n"
+             "  size_bytes INTEGER NOT NULL,\n"
+             "  mtime REAL NOT NULL,\n"
+             "  note_date TEXT,\n"
+             "  date_source TEXT NOT NULL,\n"
+             "  tags_json TEXT NOT NULL DEFAULT '[]',\n"
+             "  links_json TEXT NOT NULL DEFAULT '[]',\n"
+             "  status TEXT NOT NULL,              -- indexed | security_hold | stale\n"
+             "  hold_reason TEXT,\n"
+             "  updated_at TEXT NOT NULL\n"
+             ");\n"
+             "\n"
+             "CREATE TABLE IF NOT EXISTS chunks (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  path TEXT NOT NULL REFERENCES notes(path) ON DELETE CASCADE,\n"
+             "  idx INTEGER NOT NULL,\n"
+             "  char_start INTEGER NOT NULL,\n"
+             "  char_end INTEGER NOT NULL,\n"
+             "  line_start INTEGER NOT NULL,\n"
+             "  line_end INTEGER NOT NULL,\n"
+             "  heading TEXT NOT NULL DEFAULT '',\n"
+             "  chunk_date TEXT,\n"
+             "  sha256 TEXT NOT NULL,\n"
+             "  body TEXT NOT NULL,\n"
+             "  summary TEXT NOT NULL DEFAULT '',\n"
+             "  status TEXT NOT NULL DEFAULT 'pending',   -- pending | done | imported | error\n"
+             "  attempts INTEGER NOT NULL DEFAULT 0,\n"
+             "  error TEXT,\n"
+             "  embedding BLOB,\n"
+             "  updated_at TEXT NOT NULL,\n"
+             "  UNIQUE(path, idx)\n"
+             ");\n"
+             "CREATE INDEX IF NOT EXISTS idx_chunks_status ON chunks(status);\n"
+             "CREATE INDEX IF NOT EXISTS idx_chunks_sha ON chunks(sha256);\n"
+             "\n"
+             "CREATE TABLE IF NOT EXISTS facts (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  chunk_id INTEGER REFERENCES chunks(id) ON DELETE SET NULL,\n"
+             "  path TEXT,                          -- NULL для фактов из диалога\n"
+             "  source_ref TEXT NOT NULL,           -- путь#Lx-Ly или session:N\n"
+             "  origin TEXT NOT NULL,               -- note | v3_import | chat | session\n"
+             "  claim TEXT NOT NULL,\n"
+             "  kind TEXT NOT NULL,\n"
+             "  domain TEXT NOT NULL,\n"
+             "  subject TEXT NOT NULL DEFAULT 'self',\n"
+             "  explicitness TEXT NOT NULL DEFAULT 'explicit',\n"
+             "  intent_status TEXT NOT NULL DEFAULT 'none',\n"
+             "  event_date TEXT,                    -- когда это было (по тексту или дате заметки)\n"
+             "  note_date TEXT,\n"
+             "  date_reliable INTEGER NOT NULL DEFAULT 1,\n"
+             "  evidence_quote TEXT NOT NULL DEFAULT '',\n"
+             "  quote_match TEXT NOT NULL DEFAULT 'none',   -- exact | partial | none\n"
+             "  sensitivity TEXT NOT NULL DEFAULT 'normal',\n"
+             "  is_project INTEGER NOT NULL DEFAULT 0,\n"
+             "  user_state TEXT NOT NULL DEFAULT 'none',    -- none | confirmed | rejected\n"
+             "  cluster_id INTEGER,\n"
+             "  embedding BLOB,\n"
+             "  created_at TEXT NOT NULL\n"
+             ");\n"
+             "CREATE INDEX IF NOT EXISTS idx_facts_path ON facts(path);\n"
+             "CREATE INDEX IF NOT EXISTS idx_facts_cluster ON facts(cluster_id);\n"
+             "CREATE INDEX IF NOT EXISTS idx_facts_chunk ON facts(chunk_id);\n"
+             "\n"
+             "CREATE TABLE IF NOT EXISTS hypotheses_raw (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  chunk_id INTEGER REFERENCES chunks(id) ON DELETE CASCADE,\n"
+             "  path TEXT NOT NULL,\n"
+             "  source_ref TEXT NOT NULL,\n"
+             "  hypothesis TEXT NOT NULL,\n"
+             "  evidence_quote TEXT NOT NULL,\n"
+             "  alternative TEXT NOT NULL DEFAULT '',\n"
+             "  created_at TEXT NOT NULL\n"
+             ");\n"
+             "CREATE INDEX IF NOT EXISTS idx_hyp_chunk ON hypotheses_raw(chunk_id);\n"
+             "CREATE INDEX IF NOT EXISTS idx_hyp_path ON hypotheses_raw(path);\n"
+             "\n"
+             "CREATE TABLE IF NOT EXISTS clusters (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  domain TEXT NOT NULL,\n"
+             "  centroid BLOB,\n"
+             "  size INTEGER NOT NULL DEFAULT 0,\n"
+             "  support_notes INTEGER NOT NULL DEFAULT 0,\n"
+             "  first_date TEXT,\n"
+             "  last_date TEXT,\n"
+             "  head_fact_id INTEGER,              -- самый свежий надёжный факт кластера\n"
+             "  score REAL NOT NULL DEFAULT 0,\n"
+             "  updated_at TEXT NOT NULL\n"
+             ");\n"
+             "\n"
+             "-- Результаты синтеза (домены, профиль, аудит) с отпечатком входа для кэша.\n"
+             "CREATE TABLE IF NOT EXISTS artifacts (\n"
+             "  stage TEXT NOT NULL,\n"
+             "  key TEXT NOT NULL,\n"
+             "  fingerprint TEXT NOT NULL,\n"
+             "  payload_json TEXT NOT NULL,\n"
+             "  updated_at TEXT NOT NULL,\n"
+             "  PRIMARY KEY(stage, key)\n"
+             ");\n"
+             "\n"
+             "CREATE TABLE IF NOT EXISTS sessions (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  started_at TEXT NOT NULL,\n"
+             "  ended_at TEXT,\n"
+             "  title TEXT NOT NULL DEFAULT '',\n"
+             "  summary TEXT NOT NULL DEFAULT '',\n"
+             "  agreements_json TEXT NOT NULL DEFAULT '[]',\n"
+             "  embedding BLOB\n"
+             ");\n"
+             "CREATE TABLE IF NOT EXISTS turns (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,\n"
+             "  role TEXT NOT NULL,                -- user | assistant\n"
+             "  content TEXT NOT NULL,\n"
+             "  refs_json TEXT NOT NULL DEFAULT '[]',\n"
+             "  created_at TEXT NOT NULL\n"
+             ");\n"
+             "\n"
+             "-- Предложения в память из диалогов и вопросы аудита: ждут решения пользователя.\n"
+             "CREATE TABLE IF NOT EXISTS candidates (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  session_id INTEGER,\n"
+             "  source TEXT NOT NULL,              -- chat | audit\n"
+             "  claim TEXT NOT NULL,\n"
+             "  kind TEXT NOT NULL,\n"
+             "  domain TEXT NOT NULL DEFAULT 'other',\n"
+             "  reason TEXT NOT NULL DEFAULT '',\n"
+             "  target_fact_id INTEGER,            -- для вопросов аудита: о каком факте речь\n"
+             "  status TEXT NOT NULL DEFAULT 'pending',   -- pending | accepted | rejected | skipped\n"
+             "  created_at TEXT NOT NULL,\n"
+             "  decided_at TEXT\n"
+             ");\n"
+             "\n"
+             "-- Решения пользователя по утверждениям (подтвердил / отверг). Хранятся отдельно от\n"
+             "-- фактов, поэтому переживают повторное извлечение заметок: новые факты, близкие\n"
+             "-- по смыслу, получают ту же отметку.\n"
+             "CREATE TABLE IF NOT EXISTS user_marks (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  claim TEXT NOT NULL,\n"
+             "  mark TEXT NOT NULL,                -- confirmed | rejected\n"
+             "  embedding BLOB,\n"
+             "  created_at TEXT NOT NULL\n"
+             ");\n"
+             "\n"
+             "-- Договорённости из разговоров: что человек решил сделать, со сроком и статусом.\n"
+             "CREATE TABLE IF NOT EXISTS commitments (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  session_id INTEGER,\n"
+             "  text TEXT NOT NULL,\n"
+             "  due TEXT,                          -- срок, если звучал (ГГГГ-ММ-ДД)\n"
+             "  status TEXT NOT NULL DEFAULT 'open',   -- open | done | dropped\n"
+             "  note TEXT NOT NULL DEFAULT '',     -- как продвигается, почему бросил\n"
+             "  created_at TEXT NOT NULL,\n"
+             "  updated_at TEXT NOT NULL\n"
+             ");\n"
+             "CREATE INDEX IF NOT EXISTS idx_commitments_status ON commitments(status);\n"
+             "\n"
+             "-- Чек-ин: короткие ответы «как ты / что главное / что мешает» (своими словами).\n"
+             "CREATE TABLE IF NOT EXISTS checkins (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  mood INTEGER,                      -- 1..10, если назвал\n"
+             "  answers_json TEXT NOT NULL,        -- {\"mood\": \"...\", \"focus\": \"...\", \"worry\": \"...\"}\n"
+             "  created_at TEXT NOT NULL\n"
+             ");\n"
+             "\n"
+             "-- Люди из заметок и ответов. Строка живёт по имени и переживает повторное извлечение:\n"
+             "-- твои ответы (кто это, в жизни ли сейчас) не теряются; связи с фактами пересобираются.\n"
+             "CREATE TABLE IF NOT EXISTS people (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  name TEXT NOT NULL,\n"
+             "  relation TEXT NOT NULL DEFAULT '',\n"
+             "  relation_src TEXT NOT NULL DEFAULT '',   -- model | user\n"
+             "  status TEXT NOT NULL DEFAULT 'unknown',  -- current | past | unknown | ignored (не человек / ошибка)\n"
+             "  until TEXT,                              -- для past: примерно когда\n"
+             "  note TEXT NOT NULL DEFAULT '',\n"
+             "  merged_into INTEGER,                     -- это тот же человек, что people.id\n"
+             "  mentions INTEGER NOT NULL DEFAULT 0,\n"
+             "  first_date TEXT,\n"
+             "  last_date TEXT,\n"
+             "  created_at TEXT NOT NULL,\n"
+             "  updated_at TEXT NOT NULL\n"
+             ");\n"
+             "CREATE UNIQUE INDEX IF NOT EXISTS idx_people_name ON people(name COLLATE NOCASE);\n"
+             "CREATE TABLE IF NOT EXISTS fact_people (\n"
+             "  fact_id INTEGER NOT NULL,\n"
+             "  person_id INTEGER NOT NULL,\n"
+             "  PRIMARY KEY (fact_id, person_id)\n"
+             ");\n"
+             "CREATE INDEX IF NOT EXISTS idx_fact_people_person ON fact_people(person_id);\n"
+             "\n"
+             "-- Режим присутствия (body double): над чем и сколько человек работал с коучем «рядом».\n"
+             "CREATE TABLE IF NOT EXISTS focus_sessions (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  session_id INTEGER,\n"
+             "  task TEXT NOT NULL DEFAULT '',\n"
+             "  started_at TEXT NOT NULL,\n"
+             "  ended_at TEXT,\n"
+             "  minutes INTEGER NOT NULL DEFAULT 0\n"
+             ");\n"
+             "\n"
+             "-- Оценка качества: твои вердикты по выборке. Хранится ключ пункта, а не сам текст,\n"
+             "-- поэтому отчёт состоит только из чисел и его можно пересылать.\n"
+             "CREATE TABLE IF NOT EXISTS eval_marks (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  target TEXT NOT NULL,              -- currency | fact | profile | reply\n"
+             "  item_key TEXT NOT NULL,            -- хэш пункта: один пункт не показывается дважды\n"
+             "  breakdown TEXT NOT NULL DEFAULT '',-- разрез отчёта: раздел профиля, источник актуальности, тип факта\n"
+             "  verdict TEXT NOT NULL,\n"
+             "  version TEXT NOT NULL,             -- версия кода / промптов / модель\n"
+             "  created_at TEXT NOT NULL\n"
+             ");\n"
+             "CREATE INDEX IF NOT EXISTS idx_eval_target ON eval_marks(target, item_key);\n"
+             "\n"
+             "-- Актуальность: что из памяти верно сейчас, а что было раньше. Решения хранятся по\n"
+             "-- формулировке (как user_marks) и переживают повторное извлечение заметок.\n"
+             "CREATE TABLE IF NOT EXISTS currency_marks (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  claim TEXT NOT NULL,\n"
+             "  status TEXT NOT NULL,              -- current | past\n"
+             "  until TEXT,                        -- когда примерно закончилось (для past)\n"
+             "  period TEXT,                       -- когда это было, если известно («2012–2016»)\n"
+             "  source TEXT NOT NULL,              -- user — ответ человека; timeline — сверка с биографией и ответами\n"
+             "  note TEXT NOT NULL DEFAULT '',\n"
+             "  embedding BLOB,\n"
+             "  created_at TEXT NOT NULL\n"
+             ");\n"
+             "\n"
+             "-- Life Reset: реестр накопленного. Пункт живёт по смыслу (название + суть + вектор) и\n"
+             "-- переживает повторное извлечение заметок: на `inventory build` новые группы фактов\n"
+             "-- сверяются с пунктами по вектору, статус и история решений не теряются.\n"
+             "CREATE TABLE IF NOT EXISTS lr_items (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  title TEXT NOT NULL,\n"
+             "  type TEXT NOT NULL,                 -- commitment | project | idea | wish | question | situation | routine | material | experience\n"
+             "  status TEXT NOT NULL DEFAULT 'inbox',\n"
+             "  domain TEXT NOT NULL DEFAULT 'other',\n"
+             "  summary TEXT NOT NULL DEFAULT '',\n"
+             "  want TEXT NOT NULL DEFAULT '',      -- исходное желание: чего тогда хотелось\n"
+             "  hint TEXT NOT NULL DEFAULT '',      -- что видно по памяти (кодом): «в заметках отмечено как сделанное»\n"
+             "  origin TEXT NOT NULL DEFAULT 'memory',   -- memory | chat\n"
+             "  sensitive INTEGER NOT NULL DEFAULT 0,\n"
+             "  first_date TEXT,\n"
+             "  last_date TEXT,                     -- последнее упоминание в заметках и разговорах\n"
+             "  mentions INTEGER NOT NULL DEFAULT 0,\n"
+             "  notes_count INTEGER NOT NULL DEFAULT 0,\n"
+             "  next_step TEXT NOT NULL DEFAULT '',\n"
+             "  review_on TEXT,                     -- когда пересмотреть (someday / incubating / waiting)\n"
+             "  touched TEXT,                       -- когда последний раз менялся файл заметки-источника (для заметок без дат)\n"
+             "  resurfaced INTEGER NOT NULL DEFAULT 0,   -- закрытый пункт снова появился в заметках\n"
+             "  src_sig TEXT,                       -- отпечаток проектных заметок-источников на момент решения\n"
+             "  merged_into INTEGER,\n"
+             "  fact_ids_json TEXT NOT NULL DEFAULT '[]',\n"
+             "  paths_json TEXT NOT NULL DEFAULT '[]',\n"
+             "  anchors_json TEXT NOT NULL DEFAULT '[]',  -- «note:путь»: проектная заметка – всегда этот пункт, как бы её ни назвали\n"
+             "  embedding BLOB,\n"
+             "  created_at TEXT NOT NULL,\n"
+             "  updated_at TEXT NOT NULL,\n"
+             "  decided_at TEXT\n"
+             ");\n"
+             "CREATE INDEX IF NOT EXISTS idx_lr_items_status ON lr_items(status);\n"
+             "\n"
+             "-- Журнал решений: исходное состояние, предложение коуча, решение человека и причина.\n"
+             "CREATE TABLE IF NOT EXISTS lr_decisions (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  item_id INTEGER NOT NULL,\n"
+             "  from_status TEXT NOT NULL,\n"
+             "  to_status TEXT NOT NULL,\n"
+             "  proposal TEXT NOT NULL DEFAULT '',  -- что предложил коуч (если предлагал)\n"
+             "  answer TEXT NOT NULL DEFAULT '',    -- ответ человека своими словами\n"
+             "  reason TEXT NOT NULL DEFAULT '',\n"
+             "  created_at TEXT NOT NULL\n"
+             ");\n"
+             "CREATE INDEX IF NOT EXISTS idx_lr_decisions_item ON lr_decisions(item_id);\n"
+             "\n"
+             "-- Аудит жизни по областям: один раунд — одна дата, по строке на область.\n"
+             "CREATE TABLE IF NOT EXISTS lr_audit (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  round INTEGER NOT NULL,\n"
+             "  area TEXT NOT NULL,\n"
+             "  satisfaction INTEGER,               -- 1..10: насколько устраивает сейчас\n"
+             "  importance INTEGER,                 -- 1..10: насколько важно\n"
+             "  change TEXT NOT NULL DEFAULT '',    -- yes | no | maybe: хочу ли менять\n"
+             "  nature TEXT NOT NULL DEFAULT '',    -- problem | should | '': настоящая проблема или «так должно быть»\n"
+             "  note TEXT NOT NULL DEFAULT '',\n"
+             "  created_at TEXT NOT NULL,\n"
+             "  UNIQUE(round, area)\n"
+             ");\n"
+             "\n"
+             "-- Психологические гипотезы: не факты и не диагнозы. Подтверждённая — это описание\n"
+             "-- повторяемости, которое человек признал, а не черта личности.\n"
+             "CREATE TABLE IF NOT EXISTS lr_hypotheses (\n"
+             "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+             "  text TEXT NOT NULL,\n"
+             "  observations_json TEXT NOT NULL DEFAULT '[]',   -- [{\"quote\", \"ref\", \"date\"}]\n"
+             "  alternatives_json TEXT NOT NULL DEFAULT '[]',\n"
+             "  question TEXT NOT NULL DEFAULT '',  -- вопрос для проверки\n"
+             "  confidence TEXT NOT NULL DEFAULT 'low',          -- low | medium | high\n"
+             "  status TEXT NOT NULL DEFAULT 'new',              -- new | testing | pattern | rejected\n"
+             "  user_note TEXT NOT NULL DEFAULT '',\n"
+             "  embedding BLOB,\n"
+             "  created_at TEXT NOT NULL,\n"
+             "  checked_at TEXT\n"
+             ");\n")
 
 # Колонки, добавленные после первой версии схемы: в старой базе они появляются через ALTER.
 MIGRATIONS = (

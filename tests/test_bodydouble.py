@@ -3,6 +3,10 @@
 """
 from __future__ import annotations
 
+import os as _os
+
+_os.environ.setdefault("LOCAL_COACH_LANG", "ru")      # публичная копия по умолчанию английская, тесты написаны на русском
+
 import sys
 import tempfile
 import threading

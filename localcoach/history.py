@@ -25,6 +25,7 @@ from typing import Any
 from .config import PRIVATE_DOMAINS
 from .vault import IMPORT_PREFIX
 from .vectors import dot, truncated, unpack
+from .i18n import trl
 
 _PRIVATE_SQL = ",".join(f"'{d}'" for d in PRIVATE_DOMAINS) or "''"
 # Похожий факт следующего года — продолжение того же, если он попадает в период события
@@ -33,25 +34,29 @@ _PRIVATE_SQL = ",".join(f"'{d}'" for d in PRIVATE_DOMAINS) or "''"
 # а здесь области не важны и сравниваются только соседние годы.
 SPAN_SIMILARITY = 0.90
 _YEAR4 = re.compile(r"(?<!\d)((?:19|20)\d\d)(?!\d)")
-_TILL_NOW = re.compile(r"по\s+(?:настоящее|наст\.|сей\s+день|сегодня)|до\s+сих\s+пор|по\s+сейчас", re.I)
-_YEARISH = re.compile(r"^\s*(?:с\s+)?((?:19|20)\d\d)(?:\s*(?:г\.?|год|гг\.?))?(?:\s*(?:[-–—]|по)\s*((?:19|20)\d\d|настоящее\s+время|н\.?\s*в\.?|сейчас))?"
+_TILL_NOW = re.compile(r"по\s+(?:настоящее|наст\.|сей\s+день|сегодня)|до\s+сих\s+пор|по\s+сейчас|"
+                       r"to\s+(?:the\s+)?(?:present|date|now)|until\s+(?:now|today)|till\s+(?:now|today)|ongoing", re.I)
+_YEARISH = re.compile(r"^\s*(?:(?:с|from)\s+)?((?:19|20)\d\d)(?:\s*(?:г\.?|год|гг\.?))?(?:\s*(?:[-–—]|по|to|until|through)\s*((?:19|20)\d\d|настоящее\s+время|н\.?\s*в\.?|сейчас|present|now|ongoing|current))?"
                       r"(?:\s*(?:г\.?|год|гг\.?))?\s*$", re.I)
-_NOW_WORD = re.compile(r"^\s*(?:по\s+)?(?:настоящее\s+время|н\.?\s*в\.?|сейчас|наст\.?\s*вр\.?|—|-)\s*$", re.I)
+_NOW_WORD = re.compile(r"^\s*(?:по\s+|to\s+)?(?:настоящее\s+время|н\.?\s*в\.?|сейчас|наст\.?\s*вр\.?|present|now|current|ongoing|—|-)\s*$", re.I)
 CHRONICLE_KINDS = {"event", "decision"}
 _STOP = {"автор", "автора", "автору", "автором", "году", "годах", "годом", "период", "время", "настоящее",
-         "который", "которая", "которые", "своей", "своего", "свою", "также", "этого", "около"}
+         "который", "которая", "которые", "своей", "своего", "свою", "также", "этого", "около",
+         "author", "years", "period", "present", "which", "their", "about", "around", "during", "after", "before"}
 # Столбец «Возраст» в таблице биографии проставляется формулой — это не событие и не факт.
 AGE_LABEL = re.compile(r"^\s*(?:возраст|age)\b", re.I)
 # Ячейка из одних чисел («100», «6 000», «12,5%») — ряд значений по годам (курс, возраст), а не событие.
 _NUMBERISH = re.compile(r"^[\d\s.,%+\-–−]+$")
 _BIRTH_MARK = re.compile(r"<!-- birth: (\d{4}) -->")
-_RANGE = re.compile(r"((?:19|20)\d\d)(?:\s*(?:-|–|—|\.\.|по|до)\s*((?:19|20)\d\d))?")
+_RANGE = re.compile(r"((?:19|20)\d\d)(?:\s*(?:-|–|—|\.\.|по|до|to|until)\s*((?:19|20)\d\d))?")
 
 # «выведи … по годам / из базы / хронологию / все факты / то, что у тебя есть». Просьба о теме
 # («покажи, что есть в памяти про работу») сюда не попадает — её отвечает коуч по найденному.
-_VERB = r"(?:выведи|выпиши|покажи|перечисли|распечатай|дай|вывести|показать)"
+_VERB = r"(?:выведи|выпиши|покажи|перечисли|распечатай|дай|вывести|показать|list|show|print|display|output|give\s+me|dump)"
 _WHAT = (r"(?:по\s+(?:тем\s+)?годам|из\s+базы|в\s+базе|хронологи\w*|все\s+факты|весь\s+список"
-         r"|что\s+(?:у\s+тебя\s+|в\s+(?:базе|памяти)\s+)?есть\s*[.!]*\s*$)")
+         r"|что\s+(?:у\s+тебя\s+|в\s+(?:базе|памяти)\s+)?есть\s*[.!]*\s*$"
+         r"|by\s+(?:the\s+)?years?|from\s+the\s+(?:database|db)|in\s+the\s+(?:database|db)|chronolog\w*|timeline|all\s+(?:the\s+)?(?:facts|events)"
+         r"|(?:everything|what)\s+(?:you\s+have|is\s+in\s+(?:the\s+)?(?:database|memory))\s*[.!]*\s*$)")
 ASK = re.compile(rf"\b{_VERB}\b.{{0,80}}?{_WHAT}", re.I | re.S)
 
 
@@ -61,7 +66,7 @@ def parse_range(text: str) -> tuple[int | None, int | None]:
     if not m:
         return None, None
     a = int(m.group(1))
-    b = int(m.group(2)) if m.group(2) else (a if not re.search(r"\b(?:с|от|начиная)\s+" + m.group(1), text) else None)
+    b = int(m.group(2)) if m.group(2) else (a if not re.search(r"\b(?:с|от|начиная|from|since|starting)\s+" + m.group(1), text) else None)
     return (min(a, b), max(a, b)) if b else (a, None)
 
 
@@ -73,10 +78,14 @@ def claim_span(claim: str) -> int | None:
     return max(years) if len(set(years)) > 1 else None
 
 
+# Источник события: внутренние идентификаторы (русские, по ним сравнивается и сортируется) и подписи для показа.
+SOURCE_TITLES = {"разговор": trl("разговор"), "биография": trl("биография"), "заметка": trl("заметка")}
+
+
 def _source(r: sqlite3.Row) -> str:
     if r["origin"] in ("chat", "session"):
-        return "разговор"
-    return "биография" if (r["path"] or "").startswith(IMPORT_PREFIX) else "заметка"
+        return trl("разговор")
+    return trl("биография") if (r["path"] or "").startswith(IMPORT_PREFIX) else trl("заметка")
 
 
 def age_row_birth(by_label: list[tuple[int, int, str]]) -> int | None:
@@ -150,13 +159,13 @@ def birth_year(events: list[dict[str, Any]]) -> int | None:
 
 def _years_old(n: int) -> str:
     if n % 10 == 1 and n % 100 != 11:
-        return f"{n} год"
+        return trl("{0} год", n)
     if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
-        return f"{n} года"
-    return f"{n} лет"
+        return trl("{0} года", n)
+    return trl("{0} лет", n)
 
 
-_AUTHOR = re.compile(r"^Автор(?:а|у|ом|е)?\s+", re.I)
+_AUTHOR = re.compile(r"^(?:Автор(?:а|у|ом|е)?|The author|Author)\s+", re.I)
 
 
 def _plain(claim: str) -> str:
@@ -167,7 +176,7 @@ def _plain(claim: str) -> str:
 
 def _span_text(e: dict[str, Any]) -> str:
     if e.get("now"):
-        return f"с {e['year']} по настоящее время"
+        return trl("с {0} по настоящее время", e['year'])
     return f"{e['year']}–{e['till']}" if e["till"] != e["year"] else ""
 
 
@@ -175,7 +184,7 @@ def _keys(text: str) -> tuple[set[str], set[str]]:
     """Предмет утверждения: латинские слова и числа, кроме годов («porsche», «911»), и корни слов от пяти букв."""
     marks = {w.casefold() for w in re.findall(r"[A-Za-z][A-Za-z0-9-]*|(?<!\d)\d{3,}(?!\d)", text or "")
              if not _YEAR4.fullmatch(w) and len(w) >= 2}
-    stems = {w.casefold()[:5] for w in re.findall(r"[А-Яа-яЁё]{5,}", text or "") if w.casefold() not in _STOP}
+    stems = {w.casefold()[:5] for w in re.findall(r"[A-Za-zА-Яа-яЁё]{5,}", text or "") if w.casefold() not in _STOP}
     return marks, stems
 
 
@@ -305,18 +314,18 @@ def entries(conn: sqlite3.Connection, start: int | None = None, end: int | None 
 
 def _rows(n: int) -> str:
     if n % 10 == 1 and n % 100 != 11:
-        return f"{n} строка"
+        return trl("{0} строка", n)
     if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
-        return f"{n} строки"
-    return f"{n} строк"
+        return trl("{0} строки", n)
+    return trl("{0} строк", n)
 
 
 def _facts(n: int) -> str:
     if n % 10 == 1 and n % 100 != 11:
-        return f"{n} факт"
+        return trl("{0} факт", n)
     if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
-        return f"{n} факта"
-    return f"{n} фактов"
+        return trl("{0} факта", n)
+    return trl("{0} фактов", n)
 
 
 def _when(value: str) -> str:
@@ -342,8 +351,8 @@ def _spans(years: list[int]) -> str:
 def render(data: dict[str, Any]) -> str:
     years, seen, hidden = data["years"], data["seen"], data["hidden"]
     if not years:
-        span = f" за {data['start']}–{data['end'] or date.today().year}" if data["start"] else ""
-        return f"В базе нет событий с датой{span}. Без надёжной даты: {_facts(data['undated'])}."
+        span = trl(" за {0}–{1}", data['start'], data['end'] or date.today().year) if data["start"] else ""
+        return trl("В базе нет событий с датой{0}. Без надёжной даты: {1}.", span, _facts(data['undated']))
     lines = []
     for year, items in years.items():
         old = f" — {_years_old(year - data['birth'])}" if data.get("birth") and year >= data["birth"] else ""
@@ -351,13 +360,13 @@ def render(data: dict[str, Any]) -> str:
         for e in items:
             when = _when(e["date"]) if e["source"] != "биография" else ""
             span = _span_text(e) if e["source"] == "биография" else ""
-            more = [e["source"]]
+            more = [SOURCE_TITLES.get(e["source"], e["source"])]
             if e.get("project"):
-                more.append("проект")
+                more.append(trl("проект"))
             if e["n"] > 1:
-                more.append(f"упоминаний: {e['n']}" + (f", до {e['last']}" if e["last"] != e["year"] else ""))
+                more.append(trl("упоминаний: {0}", e['n']) + (trl(", до {0}", e['last']) if e["last"] != e["year"] else ""))
             if e.get("notes"):
-                more.append(f"и в заметках: {e['notes']}")
+                more.append(trl("и в заметках: {0}", e['notes']))
             lead = " ".join(x for x in (when, span + ":" if span else "") if x)
             lines.append(f"  - {lead + ' ' if lead else ''}{_plain(e['claim'])} ({', '.join(more)})")
     first = data["start"] or min(seen)
@@ -366,24 +375,22 @@ def render(data: dict[str, Any]) -> str:
     shown = sum(len(v) for v in years.values())
     lines.append("")
     if data["full"]:
-        lines.append(f"Всё, что есть в базе с датой за {first}–{last}: {_rows(shown)} из {_facts(data['total'])} "
-                     "(похожие сведены в одну строку, в год первого упоминания).")
+        lines.append(trl("Всё, что есть в базе с датой за {0}–{1}: {2} из {3} (похожие сведены в одну строку, в год первого упоминания).", first, last, _rows(shown), _facts(data['total'])))
     else:
-        lines.append(f"Хронология за {first}–{last}: {_rows(shown)} — строки биографии ({data['bio']}) "
-                     "и события из заметок и разговоров, без повторов.")
-        skipped = [(hidden["covered"], "уже есть в биографии"), (hidden["grouped"], "о том же в том же году"),
-                   (hidden["bio_retold"], "пересказы строк биографии"), (hidden["project"], "из папок проектов и идей"),
-                   (hidden["kind"], "не события: состояния, привычки, цели, суммы")]
+        lines.append(trl("Хронология за {0}–{1}: {2} — строки биографии ({3}) и события из заметок и разговоров, без повторов.", first, last, _rows(shown), data['bio']))
+        skipped = [(hidden["covered"], trl("уже есть в биографии")), (hidden["grouped"], trl("о том же в том же году")),
+                   (hidden["bio_retold"], trl("пересказы строк биографии")), (hidden["project"], trl("из папок проектов и идей")),
+                   (hidden["kind"], trl("не события: состояния, привычки, цели, суммы"))]
         skipped = [f"{_facts(n)} — {why}" for n, why in skipped if n]
         if skipped:
-            lines.append("Не показаны: " + "; ".join(skipped) + ". Всё подряд: bio --all (в чате /bio --all).")
+            lines.append(trl("Не показаны: ") + "; ".join(skipped) + trl(". Всё подряд: bio --all (в чате /bio --all)."))
     if empty:
-        lines.append(f"Пустые годы: {_spans(empty)}.")
-    lines.append(f"Без надёжной даты: {_facts(data['undated'])} — в списке их нет.")
+        lines.append(trl("Пустые годы: {0}.", _spans(empty)))
+    lines.append(trl("Без надёжной даты: {0} — в списке их нет.", _facts(data['undated'])))
     return "\n".join(lines)
 
 
 def show(conn: sqlite3.Connection, text: str = "", full: bool = False) -> str:
-    full = full or bool(re.search(r"(?:^|\s)(?:--all|-a|полностью|полный|без\s+сокращений)(?:\s|$)", text or "", re.I))
+    full = full or bool(re.search(r"(?:^|\s)(?:--all|-a|полностью|полный|без\s+сокращений|full|complete|unabridged)(?:\s|$)", text or "", re.I))
     start, end = parse_range(text)
     return render(entries(conn, start, end, full))

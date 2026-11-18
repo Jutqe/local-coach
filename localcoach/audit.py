@@ -16,13 +16,16 @@ from typing import Any
 from . import guard, store
 from .config import LR_AREAS, PRIVATE_DOMAINS
 from .util import iso_now, today
+from .i18n import trl
 
 AREA_TITLES = {key: title for key, title, _d, _dom in LR_AREAS}
 CONTINUE_DAYS = 14          # незаконченный раунд моложе этого продолжается, а не начинается заново
 CHANGE_WORDS = {"да": "yes", "д": "yes", "хочу": "yes", "нет": "no", "н": "no", "не": "no",
-                "может": "maybe", "возможно": "maybe", "м": "maybe", "?": "maybe"}
-CHANGE_TITLES = {"yes": "хочу менять", "no": "не хочу менять", "maybe": "может быть"}
-NATURE_TITLES = {"problem": "настоящая проблема", "should": "скорее «так должно быть»"}
+                "может": "maybe", "возможно": "maybe", "м": "maybe", "?": "maybe",
+                "yes": "yes", "y": "yes", "want": "yes", "no": "no", "n": "no", "not": "no",
+                "maybe": "maybe", "perhaps": "maybe", "m": "maybe"}
+CHANGE_TITLES = {"yes": trl("хочу менять"), "no": trl("не хочу менять"), "maybe": trl("может быть")}
+NATURE_TITLES = {"problem": trl("настоящая проблема"), "should": trl("скорее «так должно быть»")}
 
 
 def _days(iso: str) -> int:
@@ -65,7 +68,7 @@ def known(conn: sqlite3.Connection, domains: tuple[str, ...], limit: int = 4) ->
         f"ORDER BY f.user_state='confirmed' DESC, d DESC LIMIT 40", (*doms, str(int(today()[:4]) - 1))).fetchall()
     seen, out = set(), []
     for r in rows:
-        text = re.sub(r"^Автор[:,]?\s+", "", r["claim"]).rstrip(".")
+        text = re.sub(r"^(?:Автор|The author|Author)[:,]?\s+", "", r["claim"], flags=re.I).rstrip(".")
         key = text.casefold()[:60]
         if key in seen:
             continue
@@ -117,13 +120,11 @@ def run(conn: sqlite3.Connection, areas: list[str] | None = None) -> int:
     base = baseline(conn, round_)
     todo = [a for a in LR_AREAS if (areas and a[0] in areas) or (not areas and a[0] not in done)]
     if not todo:
-        print("Этот раунд аудита пройден. Новый начнётся сам, если запустить audit через две недели и позже; исправить "
-              "ответ – audit --areas health (ключи: " + ", ".join(AREA_TITLES) + ").\n")
+        print(trl("Этот раунд аудита пройден. Новый начнётся сам, если запустить audit через две недели и позже; исправить ответ – audit --areas health (ключи: ") + ", ".join(AREA_TITLES) + ").\n")
         return 0
-    print(("Продолжаем аудит" if cont else f"Аудит жизни, раунд {round_}") + f": осталось областей – {len(todo)}.\n"
-          "На каждую – одна строка: насколько устраивает сейчас (1-10), насколько важна (1-10) и хочешь ли "
-          "менять (да / нет / может), можно с комментарием. Пример: «6 9 да, сплю плохо».\n"
-          "Enter – пропустить область, «стоп» – закончить (ответы сохраняются сразу).\n")
+    print((trl("Продолжаем аудит") if cont else trl("Аудит жизни, раунд {0}", round_)) + trl(": осталось областей – {0}.\n"
+                                                                                                               "На каждую – одна строка: насколько устраивает сейчас (1-10), насколько важна (1-10) и хочешь ли менять (да / нет / может), можно с комментарием. Пример: «6 9 да, сплю плохо».\n"
+                                                                                                               "Enter – пропустить область, «стоп» – закончить (ответы сохраняются сразу).\n", len(todo)))
     n = 0
     for key, title, desc, domains in todo:
         print(f"{title} – {desc}")
@@ -131,29 +132,27 @@ def run(conn: sqlite3.Connection, areas: list[str] | None = None) -> int:
             print(f"  · {line}")
         prev = base.get(key)
         if prev is not None and prev["satisfaction"] is not None:
-            print(f"  в первом аудите ({prev['created_at'][:10]}): устраивало {prev['satisfaction']}, "
-                  f"важно {prev['importance'] if prev['importance'] is not None else '?'}")
+            print(trl("  в первом аудите ({0}): устраивало {1}, важно {2}", prev['created_at'][:10], prev['satisfaction'], prev['importance'] if prev['importance'] is not None else '?'))
         while True:
             ans = _ask("> ")
-            if ans is None or re.fullmatch(r"(стоп|хватит|/stop|q)", ans or "", re.I):
+            if ans is None or re.fullmatch(r"(стоп|хватит|/stop|q|stop|enough|quit|exit)", ans or "", re.I):
                 print()
                 return n
             if not ans:
                 # Пропуск запоминается: иначе в ближайшие две недели та же область спрашивалась бы снова.
                 _save(conn, round_, key, {"satisfaction": None, "importance": None, "change": "", "note": ""})
-                print("Пропустил.")
+                print(trl("Пропустил."))
                 break
             if guard.text_hold(ans):
-                print("Не записал: похоже на пароль или токен.")
+                print(trl("Не записал: похоже на пароль или токен."))
                 continue
             got = parse(ans)
             if got is None:
-                print("Начни с цифр: «6 9 да» – устраивает 6, важно 9, хочу менять.")
+                print(trl("Начни с цифр: «6 9 да» – устраивает 6, важно 9, хочу менять."))
                 continue
             if got["change"] == "yes":
-                nat = _ask("Это настоящая проблема – или скорее ощущение, что «так должно быть лучше»? "
-                           "(п – проблема, д – «должно быть», Enter – не знаю) ")
-                got["nature"] = {"п": "problem", "д": "should"}.get((nat or "").casefold()[:1], "")
+                nat = _ask(trl("Это настоящая проблема – или скорее ощущение, что «так должно быть лучше»? (п – проблема, д – «должно быть», Enter – не знаю) "))
+                got["nature"] = {"п": "problem", "д": "should", "p": "problem", "s": "should"}.get((nat or "").casefold()[:1], "")
             _save(conn, round_, key, got)
             n += 1
             break
@@ -189,18 +188,18 @@ def focus_areas(rows: dict[str, sqlite3.Row]) -> list[str]:
 def summary_text(conn: sqlite3.Connection, round_: int | None = None) -> str:
     round_ = round_ or latest_round(conn)
     if not round_:
-        return "Аудита ещё не было: python3 coach.py audit"
+        return trl("Аудита ещё не было: python3 coach.py audit")
     rows = answers(conn, round_)
     base = baseline(conn, round_)
     answered = sum(1 for r in rows.values() if r["satisfaction"] is not None)
     skipped = len(rows) - answered
-    lines = [f"Аудит, раунд {round_} – отвечено областей: {answered} из {len(LR_AREAS)}"
-             + (f", пропущено: {skipped}." if skipped else ".")]
+    lines = [trl("Аудит, раунд {0} – отвечено областей: {1} из {2}", round_, answered, len(LR_AREAS))
+             + (trl(", пропущено: {0}.", skipped) if skipped else ".")]
     for key, title, _d, _dom in LR_AREAS:
         r = rows.get(key)
         if r is None or r["satisfaction"] is None:
             continue
-        s = f"  {title}: устраивает {r['satisfaction']}" + (f", важно {r['importance']}" if r["importance"] else "")
+        s = trl("  {0}: устраивает {1}", title, r['satisfaction']) + (trl(", важно {0}", r['importance']) if r["importance"] else "")
         if r["change"]:
             s += f", {CHANGE_TITLES[r['change']]}"
         if r["nature"]:
@@ -209,16 +208,16 @@ def summary_text(conn: sqlite3.Connection, round_: int | None = None) -> str:
         if b is not None and b["satisfaction"] is not None and r["satisfaction"] is not None:
             delta = r["satisfaction"] - b["satisfaction"]
             if delta:
-                s += f"; с первого аудита {'+' if delta > 0 else ''}{delta}"
+                s += trl("; с первого аудита {0}{1}", '+' if delta > 0 else '', delta)
         lines.append(s)
     focus = focus_areas(rows)
     if focus:
-        lines.append("Где стоит работать (важно, не устраивает, хочешь менять): "
+        lines.append(trl("Где стоит работать (важно, не устраивает, хочешь менять): ")
                      + ", ".join(AREA_TITLES[k] for k in focus) + ".")
     low_ok = [AREA_TITLES[k] for k, r in rows.items() if r["satisfaction"] is not None and r["satisfaction"] <= 5
               and (r["change"] == "no" or r["nature"] == "should")]
     if low_ok:
-        lines.append("Низкая оценка, но менять не хочешь или это «так должно быть» – не обязательно цель: "
+        lines.append(trl("Низкая оценка, но менять не хочешь или это «так должно быть» – не обязательно цель: ")
                      + ", ".join(low_ok) + ".")
     return "\n".join(lines) + "\n"
 
@@ -232,10 +231,10 @@ def coach_lines(conn: sqlite3.Connection) -> list[str]:
     if not rows:
         return []
     when = min(r["created_at"] for r in rows.values())[:10]
-    out = [f"Аудит жизни ({when}), его оценки «устраивает/важно»: " + "; ".join(
-        f"{AREA_TITLES[k]} {r['satisfaction']}/{r['importance'] or '?'}" + (" – хочет менять" if r["change"] == "yes" else "")
+    out = [trl("Аудит жизни ({0}), его оценки «устраивает/важно»: ", when) + "; ".join(
+        f"{AREA_TITLES[k]} {r['satisfaction']}/{r['importance'] or '?'}" + (trl(" – хочет менять") if r["change"] == "yes" else "")
         for k, r in rows.items() if r["satisfaction"] is not None)]
     focus = focus_areas(rows)
     if focus:
-        out.append("Области, где он сам хочет перемен: " + ", ".join(AREA_TITLES[k] for k in focus))
+        out.append(trl("Области, где он сам хочет перемен: ") + ", ".join(AREA_TITLES[k] for k in focus))
     return out

@@ -16,6 +16,10 @@ _STOP = {
     "почему", "какой", "какая", "какие", "хочу", "можно", "нужно", "надо", "будет", "было", "его", "она",
     "они", "оно", "тебя", "тебе", "ты", "все", "всё", "так", "вот", "там", "тут", "где", "кто", "чем",
     "the", "and", "that", "with", "what", "this", "from",
+    "are", "was", "were", "have", "has", "had", "you", "your", "his", "her", "its", "our", "their", "them", "they",
+    "then", "than", "when", "where", "which", "who", "why", "how", "can", "could", "would", "should", "will",
+    "about", "into", "just", "very", "also", "some", "any", "not", "but", "for", "does", "did", "been", "being",
+    "want", "need", "think", "know", "like", "tell", "show", "give", "please",
 }
 _PRIVATE_SQL = ",".join(f"'{d}'" for d in PRIVATE_DOMAINS) or "''"
 

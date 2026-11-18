@@ -18,7 +18,7 @@ import threading
 from datetime import date
 from typing import Any
 
-from . import guard, store
+from . import guard, i18n, store
 from .config import Config, DOMAIN_TITLES, KIND_TITLES, PRIVATE_DOMAINS
 from .ollama import Ollama, OllamaError
 from .prompts import (CALIBRATE_ANSWER_SCHEMA, CALIBRATE_ANSWER_SYSTEM, TIMELINE_SCHEMA, TIMELINE_VERSION,
@@ -26,6 +26,7 @@ from .prompts import (CALIBRATE_ANSWER_SCHEMA, CALIBRATE_ANSWER_SYSTEM, TIMELINE
 from .util import Progress, digest, iso_now, normalize_time_ref, today, warn
 from .vault import IMPORT_PREFIX
 from .vectors import Matrix, truncated, unpack
+from .i18n import ru_key, trl
 
 HISTORY_KINDS = {"event", "decision"}
 FRESH_MONTHS = 12          # упоминание свежее года считается актуальным, пока не сказано иное
@@ -49,6 +50,8 @@ def months_ago(value: str | None) -> int | None:
 
 
 def _plural(n: int, one: str, few: str, many: str) -> str:
+    if i18n.LANG != "ru":                      # по-английски две формы: 1 и остальные
+        return one if n == 1 else few
     if n % 10 == 1 and n % 100 != 11:
         return one
     if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
@@ -60,28 +63,28 @@ def age_text(months: int | None) -> str:
     if months is None:
         return ""
     if months < 12:
-        return "в последние месяцы" if months <= 1 else f"{months} мес. назад"
+        return trl("в последние месяцы") if months <= 1 else trl("{0} мес. назад", months)
     years = months // 12
-    return f"{years} {_plural(years, 'год', 'года', 'лет')} назад"
+    return trl("{0} {1} назад", years, _plural(years, trl("год"), trl("года"), trl("лет")))
 
 
 def label(currency: str | None, src: str | None, until: str | None, period: str | None,
           last_date: str | None) -> str:
     """Короткая пометка времени для модели и для человека."""
     if currency == "current":
-        return {"user": "актуально — подтвердил ты", "timeline": "актуально по биографии",
-                "confirmed": "подтверждено тобой", "recent": "свежее"}.get(src or "", "актуально")
+        return {"user": trl("актуально — подтвердил ты"), "timeline": trl("актуально по биографии"),
+                "confirmed": trl("подтверждено тобой"), "recent": trl("свежее")}.get(src or "", "актуально")
     if currency == "past":
-        when = period if period and len(_YEAR.findall(period)) >= 2 else (f"до {until}" if until else "")
-        return "в прошлом" + (f" ({when})" if when else "")
+        when = period if period and len(_YEAR.findall(period)) >= 2 else (trl("до {0}", until) if until else "")
+        return trl("в прошлом") + (f" ({when})" if when else "")
     if currency == "history":
         return ""
     m = months_ago(last_date)
     if m is None:
-        return "дата и актуальность неизвестны"
+        return trl("дата и актуальность неизвестны")
     if m <= FRESH_MONTHS:
         return ""
-    return f"актуальность не проверена, последнее упоминание {age_text(m)}"
+    return trl("актуальность не проверена, последнее упоминание {0}", age_text(m))
 
 
 # --- отметки актуальности ---------------------------------------------------------------
@@ -219,9 +222,9 @@ def timeline_entries(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             f"OR (path IN ({marks}) AND date_reliable=1 AND event_date IS NOT NULL)) "
             "ORDER BY event_date, id", (IMPORT_PREFIX + "%", *chrono)):
         if r["origin"] == "chat":
-            src = "сказал в разговоре"
+            src = trl("сказал в разговоре")
         else:
-            src = "биография" if (r["path"] or "").startswith(IMPORT_PREFIX) else "дневник"
+            src = trl("биография") if (r["path"] or "").startswith(IMPORT_PREFIX) else trl("дневник")
         out.append({"ref": f"T{r['id']}", "date": r["event_date"] or "", "vec": unpack(r["embedding"]),
                     "text": f"{r['claim']} ({src})"})
     seen: set[tuple] = set()
@@ -232,12 +235,12 @@ def timeline_entries(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             continue
         seen.add(key)
         if r["status"] == "current":
-            answer = "так и сейчас"
+            answer = trl("так и сейчас")
         else:
-            answer = "уже не так" + (f", было {r['period']}" if r["period"] else "") + (
-                f", закончилось {r['until']}" if r["until"] else "")
+            answer = trl("уже не так") + (trl(", было {0}", r['period']) if r["period"] else "") + (
+                trl(", закончилось {0}", r['until']) if r["until"] else "")
         out.append({"ref": f"U{r['id']}", "date": r["until"] or r["created_at"][:10], "vec": unpack(r["embedding"]),
-                    "text": f"«{r['claim']}» — ответ человека {r['created_at'][:10]}: {answer}"})
+                    "text": trl("«{0}» — ответ человека {1}: {2}", r['claim'], r['created_at'][:10], answer)})
     # Для подбора строк хватает усечённых векторов (как у склейки) — втрое быстрее без numpy.
     return [{**e, "vec": truncated(e["vec"])} for e in out if e["vec"] is not None]
 
@@ -289,7 +292,7 @@ def _fingerprint(cfg: Config, row: sqlite3.Row, refs: list[str], by_ref: dict[st
 def _when(row: sqlite3.Row) -> str:
     if row["first_date"] and row["last_date"] and row["first_date"] != row["last_date"]:
         return f"{row['first_date']}…{row['last_date']}"
-    return row["last_date"] or "дата неизвестна"
+    return row["last_date"] or trl("дата неизвестна")
 
 
 def _judge(conn: sqlite3.Connection, llm: Ollama, cfg: Config, rows: list[sqlite3.Row],
@@ -301,7 +304,7 @@ def _judge(conn: sqlite3.Connection, llm: Ollama, cfg: Config, rows: list[sqlite
     timeline = "\n".join(f"{x} | {by_ref[x]['date'] or 'без даты'} | {by_ref[x]['text']}" for x in refs)
     amap = {f"A{i}": r for i, r in enumerate(rows, 1)}
     claims = "\n".join(f"{a} | {KIND_TITLES.get(r['kind'], r['kind'])} | {_when(r)} | {r['claim']}" for a, r in amap.items())
-    user = f"Сегодня: {today()}.\n\nХРОНОЛОГИЯ:\n{timeline}\n\nУТВЕРЖДЕНИЯ:\n{claims}"
+    user = trl("Сегодня: {0}.\n\nХРОНОЛОГИЯ:\n{1}\n\nУТВЕРЖДЕНИЯ:\n{2}", today(), timeline, claims)
     raw = llm.chat_json(TIMELINE_SYSTEM, user, TIMELINE_SCHEMA, think=cfg.think_synth, num_predict=1800,
                         model=cfg.synth_name)
     verdicts: dict[str, dict[str, Any]] = {}
@@ -387,17 +390,17 @@ def resolve_pending(conn: sqlite3.Connection, llm: Ollama, cfg: Config, quiet: b
     if not todo:
         return totals
     batches = [todo[i:i + BATCH] for i in range(0, len(todo), BATCH)]
-    progress = None if quiet else Progress(len(batches), "сверка с хронологией, пакет")
+    progress = None if quiet else Progress(len(batches), trl("сверка с хронологией, пакет"))
     for batch in batches:
         try:
             counts = _apply(conn, _judge(conn, llm, cfg, batch, entries, matrix))
         except OllamaError as exc:
-            warn(f"сверка с хронологией прервана ({type(exc).__name__}); продолжится при следующем запуске")
+            warn(trl("сверка с хронологией прервана ({0}); продолжится при следующем запуске", type(exc).__name__))
             break
         for k, n in counts.items():
             totals[k] += n
         if progress:
-            progress.step(f"в прошлом {counts['past']}, актуально {counts['current']}")
+            progress.step(trl("в прошлом {0}, актуально {1}", counts['past'], counts['current']))
     return totals
 
 
@@ -421,13 +424,13 @@ def question_queue(conn: sqlite3.Connection, cfg: Config, include_skipped: bool 
     return [r for r in rows if store.cache_get(conn, "calib_skip", str(r["id"]), digest(r["claim"])) is None]
 
 
-LEGEND = """Ответы:
-  с — так и сейчас
-  б — было, но уже нет; можно сразу с годом: «б 2019» или «б 2012-2016»
-  и — изменилось, и сразу как сейчас: «и теперь работаю в …»
-  н — неверно, не про меня
-  п — пропустить,  в — закончить,  ? — подсказка
-Можно ответить и своими словами («уволился в 2019, теперь фриланс») — разберу сам."""
+LEGEND = trl("Ответы:\n"
+             "  с — так и сейчас\n"
+             "  б — было, но уже нет; можно сразу с годом: «б 2019» или «б 2012-2016»\n"
+             "  и — изменилось, и сразу как сейчас: «и теперь работаю в …»\n"
+             "  н — неверно, не про меня\n"
+             "  п — пропустить,  в — закончить,  ? — подсказка\n"
+             "Можно ответить и своими словами («уволился в 2019, теперь фриланс») — разберу сам.")
 
 
 def _years(text: str) -> tuple[str, str]:
@@ -486,16 +489,16 @@ def calibrate(conn: sqlite3.Connection, llm: Ollama, cfg: Config, limit: int = 2
     apply_currency_marks(conn, cfg)
     refresh_currency(conn)
     if timeline_entries(conn):
-        print("Сверяю старые утверждения с биографией и твоими ответами…", flush=True)
+        print(trl("Сверяю старые утверждения с биографией и твоими ответами…"), flush=True)
         r = resolve_pending(conn, llm, cfg)
         if r["past"] or r["current"]:
-            print(f"  без вопросов понятно: в прошлом {r['past']}, актуально {r['current']}")
+            print(trl("  без вопросов понятно: в прошлом {0}, актуально {1}", r['past'], r['current']))
     items = question_queue(conn, cfg, include_skipped)
     if not items:
-        print("Вопросов нет: всё важное для профиля либо свежее, либо уже сверено.\n")
+        print(trl("Вопросов нет: всё важное для профиля либо свежее, либо уже сверено.\n"))
         return 0
-    print(f"\nВ профиль попадают утверждения из старых заметок, про которые неясно, верны ли они сейчас: "
-          f"{len(items)}. Начну с самых важных, за раз — до {limit}.\n")
+    print(trl("\n"
+              "В профиль попадают утверждения из старых заметок, про которые неясно, верны ли они сейчас: {0}. Начну с самых важных, за раз — до {1}.\n", len(items), limit))
     print(LEGEND + "\n")
     bg = _Background(cfg, llm)
     answered: set[int] = set()
@@ -516,16 +519,15 @@ def calibrate(conn: sqlite3.Connection, llm: Ollama, cfg: Config, limit: int = 2
             bg.start([r["id"] for r in items[i + 1:i + 1 + BATCH] if r["id"] not in answered])
             timeline_changed = False
         when = label("unknown", "", None, None, item["last_date"])
-        print(f"[{len(answered) + 1}] {DOMAIN_TITLES.get(item['domain'], item['domain'])} · "
-              f"заметок: {item['support_notes']} · {when}")
+        print(trl("[{0}] {1} · заметок: {2} · {3}", len(answered) + 1, DOMAIN_TITLES.get(item['domain'], item['domain']), item['support_notes'], when))
         print(f"  {item['claim']}")
         try:
-            ans = input("  > ").strip()
+            ans = ru_key(input("  > ").strip())
         except (EOFError, KeyboardInterrupt):
             print()
             break
         low = ans.casefold()
-        if low in ("в", "выход", "q"):
+        if low in ("в", "выход", "q", "quit", "exit"):
             break
         if low in ("?", "помощь", "help"):
             print(LEGEND + "\n")
@@ -544,22 +546,22 @@ def calibrate(conn: sqlite3.Connection, llm: Ollama, cfg: Config, limit: int = 2
             until, period = _years(ans)
             if not until:
                 try:
-                    until, period = _years(input("  Когда примерно закончилось? (год, Enter — не помню): "))
+                    until, period = _years(input(trl("  Когда примерно закончилось? (год, Enter — не помню): ")))
                 except (EOFError, KeyboardInterrupt):
                     break
         elif one_letter and head == "и":
             text = rest
             if not text:
                 try:
-                    text = input("  Как сейчас: ").strip()
+                    text = input(trl("  Как сейчас: ")).strip()
                 except (EOFError, KeyboardInterrupt):
                     break
             if not text:
                 continue
             # Модель только переформулирует «как сейчас» и вытаскивает год; вердикт уже известен.
-            _v, until, period, now_claim = _interpret(llm, item, f"Уже не так. Сейчас: {text}")
+            _v, until, period, now_claim = _interpret(llm, item, trl("Уже не так. Сейчас: {0}", text))
             verdict, now_claim = "past", now_claim or text
-            print(f"  [понял: {_describe(verdict, until, period, now_claim)}]")
+            print(trl("  [понял: {0}]", _describe(verdict, until, period, now_claim)))
             explained = True
         elif one_letter and head == "н":
             verdict = "wrong"
@@ -570,15 +572,15 @@ def calibrate(conn: sqlite3.Connection, llm: Ollama, cfg: Config, limit: int = 2
             continue
         else:
             verdict, until, period, now_claim = _interpret(llm, item, ans)
-            print(f"  [понял: {_describe(verdict, until, period, now_claim)}]")
+            print(trl("  [понял: {0}]", _describe(verdict, until, period, now_claim)))
             explained = True
             if verdict == "wrong":
                 # Забыть — необратимо для профиля, поэтому по свободному ответу только с подтверждением.
                 try:
-                    sure = input("  Забыть это утверждение совсем? (д — да, иначе запишу как «в прошлом»): ")
+                    sure = input(trl("  Забыть это утверждение совсем? (д — да, иначе запишу как «в прошлом»): "))
                 except (EOFError, KeyboardInterrupt):
                     break
-                if not sure.strip().casefold().startswith("д"):
+                if not sure.strip().casefold().startswith(("д", "y")):
                     verdict = "past"
             if verdict == "skip":
                 i += 1
@@ -595,15 +597,15 @@ def calibrate(conn: sqlite3.Connection, llm: Ollama, cfg: Config, limit: int = 2
         if not explained:
             print(f"  ✓ {_describe(verdict, until, period, now_claim)}")
         if now_claim and not guard.text_hold(now_claim):
-            if not now_claim.casefold().startswith("автор"):
-                now_claim = f"Автор: {now_claim}"
+            if not now_claim.casefold().startswith(("автор", "the author", "author")):
+                now_claim = trl("Автор: {0}", now_claim)
             _add_confirmed_fact(conn, llm, now_claim, item["kind"], item["domain"], None)
             conn.commit()
         answered.add(cid)
         i += 1
         print()
     if bg.thread is not None:
-        print("Досверяю следующие вопросы с твоими ответами…", flush=True)
+        print(trl("Досверяю следующие вопросы с твоими ответами…"), flush=True)
         bg.collect(conn, answered, wait=True)
     if rejected or answered:
         from .vectors import update_clusters
@@ -611,14 +613,14 @@ def calibrate(conn: sqlite3.Connection, llm: Ollama, cfg: Config, limit: int = 2
         apply_currency_marks(conn, cfg)
         refresh_currency(conn)
     left = len(question_queue(conn, cfg))
-    print(f"Ответов: {len(answered)}, понято из твоих ответов без вопроса: {auto}. Осталось вопросов: {left}.")
+    print(trl("Ответов: {0}, понято из твоих ответов без вопроса: {1}. Осталось вопросов: {2}.", len(answered), auto, left))
     return len(answered)
 
 
 def _interpret(llm: Ollama, item: sqlite3.Row, answer: str) -> tuple[str, str, str, str]:
     """Свободный ответ → вердикт. Ничего не выдумываем: непонятное = пропуск."""
     try:
-        raw = llm.chat_json(CALIBRATE_ANSWER_SYSTEM, f"Сегодня: {today()}.\nУтверждение: {item['claim']}\nОтвет: {answer}",
+        raw = llm.chat_json(CALIBRATE_ANSWER_SYSTEM, trl("Сегодня: {0}.\nУтверждение: {1}\nОтвет: {2}", today(), item['claim'], answer),
                             CALIBRATE_ANSWER_SCHEMA, num_predict=300, attempts=2)
     except OllamaError:
         return "skip", "", "", ""
@@ -633,9 +635,9 @@ def _interpret(llm: Ollama, item: sqlite3.Row, answer: str) -> tuple[str, str, s
 
 
 def _describe(verdict: str, until: str, period: str, now_claim: str) -> str:
-    text = {"current": "так и сейчас", "wrong": "неверно, забуду", "skip": "пропускаю"}.get(verdict, "")
+    text = {"current": trl("так и сейчас"), "wrong": trl("неверно, забуду"), "skip": trl("пропускаю")}.get(verdict, "")
     if verdict == "past":
         text = label("past", "", until, period, None)
     if now_claim:
-        text += f"; сейчас: {now_claim}"
+        text += trl("; сейчас: {0}", now_claim)
     return text

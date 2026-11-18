@@ -8,8 +8,9 @@ from . import store
 from .config import Config, DOMAIN_TITLES
 from .synth import STATUS_TITLES
 from .util import atomic_write, iso_now, safe_slug
+from .i18n import trl
 
-AUDIT_MARKS = {"weak": "смягчено аудитом", "outdated": "возможно устарело", "unchecked": "не проверено аудитом"}
+AUDIT_MARKS = {"weak": trl("смягчено аудитом"), "outdated": trl("возможно устарело"), "unchecked": trl("не проверено аудитом")}
 
 
 def _sources(conn: sqlite3.Connection, ids: list[str], per: int = 3) -> str:
@@ -42,15 +43,15 @@ def _items(conn, title: str, items: list[dict[str, Any]], key: str = "text", sta
         if it.get("audit") in AUDIT_MARKS:
             marks.append(AUDIT_MARKS[it["audit"]])
         if it.get("confirmed"):
-            marks.append("подтверждено тобой")
+            marks.append(trl("подтверждено тобой"))
         elif it.get("support") == 1:
-            marks.append("одно упоминание")
+            marks.append(trl("одно упоминание"))
         elif it.get("support"):
-            marks.append(f"заметок: {it['support']}")
+            marks.append(trl("заметок: {0}", it['support']))
         lines.append(f"- {it.get(key, '')}" + (f" *({', '.join(marks)})*" if marks else ""))
         if it.get("original"):
-            lines.append(f"  было: {it['original']}")
-        lines.append(f"  источники: {_sources(conn, it.get('ids') or it.get('for') or [])}")
+            lines.append(trl("  было: {0}", it['original']))
+        lines.append(trl("  источники: {0}", _sources(conn, it.get('ids') or it.get('for') or [])))
     lines.append("")
     return lines
 
@@ -58,16 +59,16 @@ def _items(conn, title: str, items: list[dict[str, Any]], key: str = "text", sta
 def _patterns(conn, title: str, items: list[dict[str, Any]]) -> list[str]:
     if not items:
         return []
-    lines = [f"## {title}", "", "> Гипотезы, а не факты: их стоит проверять вопросом, а не принимать на веру.", ""]
+    lines = [f"## {title}", "", trl("> Гипотезы, а не факты: их стоит проверять вопросом, а не принимать на веру."), ""]
     for p in items:
-        lines.append(f"- **{p['hypothesis']}**" + (f" *(уверенность: {p.get('confidence')})*" if p.get("confidence") else ""))
-        lines.append(f"  за: {_sources(conn, p.get('for', []))}")
+        lines.append(f"- **{p['hypothesis']}**" + (trl(" *(уверенность: {0})*", p.get('confidence')) if p.get("confidence") else ""))
+        lines.append(trl("  за: {0}", _sources(conn, p.get('for', []))))
         if p.get("against"):
-            lines.append(f"  против: {_sources(conn, p['against'])}")
+            lines.append(trl("  против: {0}", _sources(conn, p['against'])))
         for a in p.get("alternatives", []):
-            lines.append(f"  альтернатива: {a}")
+            lines.append(trl("  альтернатива: {0}", a))
         if p.get("question"):
-            lines.append(f"  проверить вопросом: {p['question']}")
+            lines.append(trl("  проверить вопросом: {0}", p['question']))
     lines.append("")
     return lines
 
@@ -80,8 +81,8 @@ def _plain(title: str, items: list[dict[str, Any]], key: str = "text") -> list[s
 def plain_profile(profile: dict[str, Any] | None) -> str:
     """Профиль для чтения: только содержание — без источников, дат, пометок аудита и служебных разделов."""
     if not profile:
-        return "# Профиль\n\nПрофиль ещё не построен.\n"
-    lines = ["# Профиль", ""]
+        return trl("# Профиль\n\nПрофиль ещё не построен.\n")
+    lines = [trl("# Профиль"), ""]
     if profile.get("portrait"):
         lines += [profile["portrait"].strip(), ""]
     for title, key in (("Устойчивое", "core_facts"), ("Сейчас в фокусе", "current_focus"), ("Цели", "goals"),
@@ -90,10 +91,10 @@ def plain_profile(profile: dict[str, Any] | None) -> str:
                        ("Не проверено, актуально ли сейчас", "unverified")):
         lines += _plain(title, profile.get(key, []))
     if profile.get("patterns"):
-        lines += ["## Гипотезы", "", "> Догадки модели, а не факты.", ""]
+        lines += [trl("## Гипотезы"), "", trl("> Догадки модели, а не факты."), ""]
         lines += [f"- {p['hypothesis']}" for p in profile["patterns"] if p.get("hypothesis")] + [""]
     if profile.get("coach_notes"):
-        lines += ["## Как лучше разговаривать", ""] + [f"- {x}" for x in profile["coach_notes"]] + [""]
+        lines += [trl("## Как лучше разговаривать"), ""] + [f"- {x}" for x in profile["coach_notes"]] + [""]
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -101,31 +102,29 @@ def write_all(conn: sqlite3.Connection, cfg: Config, domains: dict[str, dict[str
               profile: dict[str, Any] | None) -> None:
     mem = cfg.memory_dir
     (mem / "domains").mkdir(parents=True, exist_ok=True)
-    head = ["", f"Обновлено: {iso_now()}", "",
-            "> Черновик памяти, собранный локальной моделью по заметкам. Не подтверждённые факты о всей жизни: "
-            "у каждого пункта есть источники, одно упоминание — не черта характера. Исправлять — через "
-            "`coach.py review` и команду /forget в чате.", ""]
+    head = ["", trl("Обновлено: {0}", iso_now()), "",
+            trl("> Черновик памяти, собранный локальной моделью по заметкам. Не подтверждённые факты о всей жизни: у каждого пункта есть источники, одно упоминание — не черта характера. Исправлять — через `coach.py review` и команду /forget в чате."), ""]
 
     # --- профиль
-    lines = ["# Опорный профиль", *head]
+    lines = [trl("# Опорный профиль"), *head]
     if profile:
         if profile.get("portrait"):
-            lines += ["## Портрет", "", profile["portrait"], ""]
-        lines += _items(conn, "Устойчивое", profile.get("core_facts", []))
-        lines += _items(conn, "Сейчас в фокусе", profile.get("current_focus", []))
-        lines += _items(conn, "Цели", profile.get("goals", []), status=True)
-        lines += _items(conn, "Ценности", profile.get("values", []))
-        lines += _items(conn, "Ресурсы и сильные стороны", profile.get("strengths", []))
-        lines += _items(conn, "Противоречия", profile.get("tensions", []))
-        lines += _items(conn, "Прошлое", profile.get("history", []))
-        lines += _items(conn, "Не проверено, актуально ли сейчас", profile.get("unverified", []))
-        lines += _patterns(conn, "Гипотезы", profile.get("patterns", []))
+            lines += [trl("## Портрет"), "", profile["portrait"], ""]
+        lines += _items(conn, trl("Устойчивое"), profile.get("core_facts", []))
+        lines += _items(conn, trl("Сейчас в фокусе"), profile.get("current_focus", []))
+        lines += _items(conn, trl("Цели"), profile.get("goals", []), status=True)
+        lines += _items(conn, trl("Ценности"), profile.get("values", []))
+        lines += _items(conn, trl("Ресурсы и сильные стороны"), profile.get("strengths", []))
+        lines += _items(conn, trl("Противоречия"), profile.get("tensions", []))
+        lines += _items(conn, trl("Прошлое"), profile.get("history", []))
+        lines += _items(conn, trl("Не проверено, актуально ли сейчас"), profile.get("unverified", []))
+        lines += _patterns(conn, trl("Гипотезы"), profile.get("patterns", []))
         if profile.get("coach_notes"):
-            lines += ["## Как лучше разговаривать", ""] + [f"- {x}" for x in profile["coach_notes"]] + [""]
+            lines += [trl("## Как лучше разговаривать"), ""] + [f"- {x}" for x in profile["coach_notes"]] + [""]
         if profile.get("removed"):
-            lines += ["## Убрано аудитом", ""] + [f"- {r['text']} — {r['note']}" for r in profile["removed"]] + [""]
+            lines += [trl("## Убрано аудитом"), ""] + [f"- {r['text']} — {r['note']}" for r in profile["removed"]] + [""]
     else:
-        lines.append("Профиль ещё не построен.")
+        lines.append(trl("Профиль ещё не построен."))
     atomic_write(mem / "profile.md", "\n".join(lines) + "\n")
     atomic_write(mem / "profile_plain.md", plain_profile(profile))
 
@@ -138,20 +137,20 @@ def write_all(conn: sqlite3.Connection, cfg: Config, domains: dict[str, dict[str
         lines = [f"# {title}", *head]
         if d.get("overview"):
             lines += [d["overview"], ""]
-        lines += _items(conn, "Главное", d.get("key_points", []))
-        lines += _items(conn, "Цели", d.get("goals", []), status=True)
-        lines += _items(conn, "Что изменилось", d.get("changes", []))
-        lines += _items(conn, "Противоречия", d.get("tensions", []))
-        lines += _patterns(conn, "Гипотезы", d.get("patterns", []))
-        lines += _items(conn, "Возможные рычаги", d.get("levers", []), key="idea")
+        lines += _items(conn, trl("Главное"), d.get("key_points", []))
+        lines += _items(conn, trl("Цели"), d.get("goals", []), status=True)
+        lines += _items(conn, trl("Что изменилось"), d.get("changes", []))
+        lines += _items(conn, trl("Противоречия"), d.get("tensions", []))
+        lines += _patterns(conn, trl("Гипотезы"), d.get("patterns", []))
+        lines += _items(conn, trl("Возможные рычаги"), d.get("levers", []), key="idea")
         if d.get("open_questions"):
-            lines += ["## Открытые вопросы", ""] + [f"- {q['question']}" + (f" — {q['why']}" if q.get("why") else "")
+            lines += [trl("## Открытые вопросы"), ""] + [f"- {q['question']}" + (f" — {q['why']}" if q.get("why") else "")
                                                     for q in d["open_questions"]] + [""]
         all_patterns += [(title, p) for p in d.get("patterns", [])]
         atomic_write(mem / "domains" / f"{safe_slug(domain)}.md", "\n".join(lines) + "\n")
 
     # --- все гипотезы
-    lines = ["# Гипотезы о паттернах", *head]
+    lines = [trl("# Гипотезы о паттернах"), *head]
     for title, p in all_patterns:
         lines += _patterns(conn, title, [p])
     atomic_write(mem / "hypotheses.md", "\n".join(lines) + "\n")
@@ -161,8 +160,8 @@ def write_all(conn: sqlite3.Connection, cfg: Config, domains: dict[str, dict[str
         "SELECT cl.domain, f.claim, f.intent_status, f.source_ref, cl.last_date FROM clusters cl "
         "JOIN facts f ON f.id=cl.head_fact_id WHERE f.is_project=1 AND f.user_state!='rejected' "
         "ORDER BY cl.domain, cl.score DESC").fetchall()
-    lines = ["# Проекты и идеи", *head,
-             "> Упоминание идеи не значит, что проект начат или что это актуальная цель.", ""]
+    lines = [trl("# Проекты и идеи"), *head,
+             trl("> Упоминание идеи не значит, что проект начат или что это актуальная цель."), ""]
     current = None
     for r in rows:
         if r["domain"] != current:
@@ -178,15 +177,12 @@ def write_all(conn: sqlite3.Connection, cfg: Config, domains: dict[str, dict[str
 
 def write_cluster_review(conn: sqlite3.Connection, cfg: Config) -> None:
     """Самые крупные кластеры с участниками — чтобы проверить порог склейки."""
-    lines = ["# Проверка склейки фактов", "",
-             f"Порог сходства: {cfg.cluster_threshold} (LOCAL_COACH_CLUSTER_THRESHOLD).",
-             "Если в одном кластере оказываются разные по смыслу утверждения — порог стоит поднять (0.92–0.94); "
-             "если одинаковые утверждения разбросаны по разным кластерам — опустить (0.87–0.88). "
-             "После смены порога: `coach.py recluster`.", ""]
+    lines = [trl("# Проверка склейки фактов"), "",
+             trl("Порог сходства: {0} (LOCAL_COACH_CLUSTER_THRESHOLD).", cfg.cluster_threshold),
+             trl("Если в одном кластере оказываются разные по смыслу утверждения — порог стоит поднять (0.92–0.94); если одинаковые утверждения разбросаны по разным кластерам — опустить (0.87–0.88). После смены порога: `coach.py recluster`."), ""]
     for cl in conn.execute("SELECT id, domain, size, support_notes FROM clusters WHERE size>1 "
                            "ORDER BY size DESC LIMIT 30"):
-        lines.append(f"## C{cl['id']} — {DOMAIN_TITLES.get(cl['domain'], cl['domain'])}, фактов {cl['size']}, "
-                     f"заметок {cl['support_notes']}")
+        lines.append(trl("## C{0} — {1}, фактов {2}, заметок {3}", cl['id'], DOMAIN_TITLES.get(cl['domain'], cl['domain']), cl['size'], cl['support_notes']))
         for f in conn.execute("SELECT claim, event_date FROM facts WHERE cluster_id=? AND user_state!='rejected' "
                               "ORDER BY event_date LIMIT 12", (cl["id"],)):
             lines.append(f"- {f['claim']}" + (f" ({f['event_date']})" if f["event_date"] else ""))
@@ -237,32 +233,28 @@ _STATUS_SQL = {
 def status_lines(conn: sqlite3.Connection) -> list[str]:
     n = {k: store.scalar(conn, sql) or 0 for k, sql in _STATUS_SQL.items()}
     return [
-        f"Заметок: {n['notes']} (отложено фильтром секретов: {n['held']}, удалено из vault: {n['stale']})",
-        f"Даты заметок: из шапки {n['d_fm']}, из имени файла {n['d_fn']}, только по mtime {n['d_mt']}; "
-        f"импортированных файлов: {n['d_imp']}",
-        f"Фрагментов: {n['chunks']} — готово {n['c_done']}, из v3 {n['c_imp']}, ждут {n['c_pend']}, "
-        f"с ошибкой {n['c_err']}",
-        f"Фактов: {n['facts']} (цитата найдена точно: {n['f_exact']}, подтверждено тобой: {n['f_conf']}, "
-        f"отвергнуто: {n['f_rej']})",
-        f"Кластеров: {n['clusters']} (из нескольких фактов: {n['cl_multi']}, крупнейший: {n['cl_max']})",
-        f"Векторы: фрагменты {n['v_chunks']}, факты {n['v_facts']}",
-        f"Актуальность кластеров: сейчас {n['t_cur']}, в прошлом {n['t_past']}, события {n['t_hist']}, "
-        f"не проверено {n['t_unk']}; твоих ответов: {n['t_user']}",
-        f"Сессий: {n['sessions']}; ждут решения в /review: {n['pending']}",
-        f"Договорённостей: открыто {n['d_open']}, сделано {n['d_done']}, брошено {n['d_drop']}",
-        f"Людей: {n['p_all']} (уточнено тобой: {n['p_known']}); чек-инов: {n['checkins']}, последний {n['checkin_last']}",
-        f"Последнее обновление: {store.get_meta(conn, 'last_update', '—')}",
+        trl("Заметок: {0} (отложено фильтром секретов: {1}, удалено из vault: {2})", n['notes'], n['held'], n['stale']),
+        trl("Даты заметок: из шапки {0}, из имени файла {1}, только по mtime {2}; импортированных файлов: {3}", n['d_fm'], n['d_fn'], n['d_mt'], n['d_imp']),
+        trl("Фрагментов: {0} — готово {1}, из v3 {2}, ждут {3}, с ошибкой {4}", n['chunks'], n['c_done'], n['c_imp'], n['c_pend'], n['c_err']),
+        trl("Фактов: {0} (цитата найдена точно: {1}, подтверждено тобой: {2}, отвергнуто: {3})", n['facts'], n['f_exact'], n['f_conf'], n['f_rej']),
+        trl("Кластеров: {0} (из нескольких фактов: {1}, крупнейший: {2})", n['clusters'], n['cl_multi'], n['cl_max']),
+        trl("Векторы: фрагменты {0}, факты {1}", n['v_chunks'], n['v_facts']),
+        trl("Актуальность кластеров: сейчас {0}, в прошлом {1}, события {2}, не проверено {3}; твоих ответов: {4}", n['t_cur'], n['t_past'], n['t_hist'], n['t_unk'], n['t_user']),
+        trl("Сессий: {0}; ждут решения в /review: {1}", n['sessions'], n['pending']),
+        trl("Договорённостей: открыто {0}, сделано {1}, брошено {2}", n['d_open'], n['d_done'], n['d_drop']),
+        trl("Людей: {0} (уточнено тобой: {1}); чек-инов: {2}, последний {3}", n['p_all'], n['p_known'], n['checkins'], n['checkin_last']),
+        trl("Последнее обновление: {0}", store.get_meta(conn, 'last_update', '—')),
     ]
 
 
 def write_status(conn: sqlite3.Connection, cfg: Config) -> None:
-    lines = ["# Local Coach — состояние", "", *[f"- {x}" for x in status_lines(conn)], "",
-             "## Файлы", "",
-             f"- Профиль: `{cfg.memory_dir / 'profile.md'}`",
-             f"- Области жизни: `{cfg.memory_dir / 'domains'}`",
-             f"- Гипотезы: `{cfg.memory_dir / 'hypotheses.md'}`",
-             f"- Проекты и идеи: `{cfg.memory_dir / 'projects_and_ideas.md'}`",
-             f"- Проверка склейки: `{cfg.memory_dir / 'clusters_review.md'}`",
-             f"- Люди: `{cfg.memory_dir / 'people.md'}`",
-             f"- База: `{cfg.db_path}`", ""]
+    lines = [trl("# Local Coach — состояние"), "", *[f"- {x}" for x in status_lines(conn)], "",
+             trl("## Файлы"), "",
+             trl("- Профиль: `{0}`", cfg.memory_dir / 'profile.md'),
+             trl("- Области жизни: `{0}`", cfg.memory_dir / 'domains'),
+             trl("- Гипотезы: `{0}`", cfg.memory_dir / 'hypotheses.md'),
+             trl("- Проекты и идеи: `{0}`", cfg.memory_dir / 'projects_and_ideas.md'),
+             trl("- Проверка склейки: `{0}`", cfg.memory_dir / 'clusters_review.md'),
+             trl("- Люди: `{0}`", cfg.memory_dir / 'people.md'),
+             trl("- База: `{0}`", cfg.db_path), ""]
     atomic_write(cfg.workspace / "STATUS.md", "\n".join(lines) + "\n")

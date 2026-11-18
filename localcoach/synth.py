@@ -15,9 +15,10 @@ from .ollama import Ollama, OllamaError, TruncatedError
 from .prompts import (AUDIT_SCHEMA, AUDIT_SYSTEM, DOMAIN_SCHEMA, DOMAIN_SYSTEM, PORTRAIT_FIX_SCHEMA,
                       PORTRAIT_FIX_SYSTEM, PROFILE_SCHEMA, PROFILE_SYSTEM, PROMPT_VERSION)
 from .util import digest, iso_now, warn
+from .i18n import trl
 
-STATUS_TITLES = {"idea": "идея", "wanted": "хочет", "planned": "в планах", "in_progress": "в процессе",
-                 "completed": "сделано", "abandoned": "отказался", "unclear": "статус неясен", "none": ""}
+STATUS_TITLES = {"idea": trl("идея"), "wanted": trl("хочет"), "planned": trl("в планах"), "in_progress": trl("в процессе"),
+                 "completed": trl("сделано"), "abandoned": trl("отказался"), "unclear": trl("статус неясен"), "none": ""}
 
 
 # --- представление кластеров -------------------------------------------------------
@@ -43,7 +44,7 @@ def _earlier_claim(conn: sqlite3.Connection, cid: int, head_claim: str, last_dat
     if not row or not last_date or row["claim"] == head_claim:
         return ""
     if last_date[:4].isdigit() and row["event_date"][:4].isdigit() and int(last_date[:4]) - int(row["event_date"][:4]) >= 1:
-        return f"\n    раньше ({row['event_date']}): {row['claim']}"
+        return trl("\n    раньше ({0}): {1}", row['event_date'], row['claim'])
     return ""
 
 
@@ -53,17 +54,17 @@ def cluster_line(conn: sqlite3.Connection, r: sqlite3.Row) -> str:
     if r["first_date"] and r["last_date"] and r["first_date"] != r["last_date"]:
         when = f"{r['first_date']}…{r['last_date']}"
     else:
-        when = r["last_date"] or "дата неизвестна"
-    flags = [f"заметок: {r['support_notes']}"]
+        when = r["last_date"] or trl("дата неизвестна")
+    flags = [trl("заметок: {0}", r['support_notes'])]
     when_label = timeline.label(r["currency"], r["currency_src"], r["valid_until"], r["period"], r["last_date"])
     if when_label:
         flags.insert(0, when_label)
     if r["confirmed"]:
-        flags.append("подтверждено в разговоре")
+        flags.append(trl("подтверждено в разговоре"))
     if r["explicitness"] == "inferred":
-        flags.append("вывод, не прямые слова")
+        flags.append(trl("вывод, не прямые слова"))
     if r["is_project"]:
-        flags.append("из папки проектов/идей")
+        flags.append(trl("из папки проектов/идей"))
     head = f"{kind} ({status})" if status else kind
     return (f"C{r['id']} | {head} | {when} | {', '.join(flags)} | {r['claim']}"
             + _earlier_claim(conn, r["id"], r["claim"], r["last_date"]))
@@ -97,8 +98,8 @@ def _hypothesis_lines(conn: sqlite3.Connection, ids_for_domain: list[int], limit
     lines, ids = [], set()
     for r in rows:
         ids.add(f"H{r['id']}")
-        alt = f" Альтернатива: {r['alternative']}" if r["alternative"] else ""
-        lines.append(f"H{r['id']} | {r['hypothesis']} (цитата: «{r['evidence_quote'][:200]}»){alt}")
+        alt = trl(" Альтернатива: {0}", r['alternative']) if r["alternative"] else ""
+        lines.append(trl("H{0} | {1} (цитата: «{2}»){3}", r['id'], r['hypothesis'], r['evidence_quote'][:200], alt))
     return lines, ids
 
 
@@ -194,8 +195,8 @@ def _call(llm: Ollama, cfg: Config, system: str, user: str, schema: dict, label:
         return llm.chat_json(system, user, schema, think=cfg.think_synth, num_predict=cfg.synth_predict,
                              model=cfg.synth_name)
     except TruncatedError:
-        print(f"  {label}: ответ не влез, повторяю с просьбой сократить формулировки.", flush=True)
-        return llm.chat_json(system + "\n\nФормулируй каждый пункт одним коротким предложением.", user, schema,
+        print(trl("  {0}: ответ не влез, повторяю с просьбой сократить формулировки.", label), flush=True)
+        return llm.chat_json(system + trl("\n\nФормулируй каждый пункт одним коротким предложением."), user, schema,
                              think=False, num_predict=cfg.synth_predict + 1500, model=cfg.synth_name)
 
 
@@ -213,9 +214,9 @@ def synthesize_domains(conn: sqlite3.Connection, llm: Ollama, cfg: Config) -> di
         lines = [cluster_line(conn, r) for r in rows]
         hyp_lines, hyp_ids = _hypothesis_lines(conn, [h for h, d in hyp_domain.items() if d == domain])
         allowed = {f"C{r['id']}" for r in rows} | hyp_ids
-        body = ("Утверждения (по убыванию важности):\n" + "\n".join(lines)
-                + ("\n\nГипотезы из заметок:\n" + "\n".join(hyp_lines) if hyp_lines else ""))
-        user = f"Область: {DOMAIN_TITLES[domain]} ({domain}). Сегодня: {iso_now()[:10]}.\n" + body
+        body = (trl("Утверждения (по убыванию важности):\n") + "\n".join(lines)
+                + (trl("\n\nГипотезы из заметок:\n") + "\n".join(hyp_lines) if hyp_lines else ""))
+        user = trl("Область: {0} ({1}). Сегодня: {2}.\n", DOMAIN_TITLES[domain], domain, iso_now()[:10]) + body
         # В отпечаток идёт месяц, а не день: иначе синтез пересчитывался бы каждые сутки.
         fingerprint = digest([PROMPT_VERSION, cfg.synth_name, domain, iso_now()[:7], body])
         cached = store.cache_get(conn, "domain", domain, fingerprint)
@@ -227,11 +228,11 @@ def synthesize_domains(conn: sqlite3.Connection, llm: Ollama, cfg: Config) -> di
             result = {"overview": "", "key_points": [{"text": r["claim"], "ids": [f"C{r['id']}"]} for r in rows],
                       "goals": [], "changes": [], "patterns": [], "tensions": [], "open_questions": [], "levers": []}
         else:
-            print(f"  Обзор области «{DOMAIN_TITLES[domain]}»: {len(rows)} кластеров", flush=True)
+            print(trl("  Обзор области «{0}»: {1} кластеров", DOMAIN_TITLES[domain], len(rows)), flush=True)
             try:
                 raw = _call(llm, cfg, DOMAIN_SYSTEM, user, DOMAIN_SCHEMA, domain)
             except OllamaError as exc:
-                warn(f"обзор области {domain} не построен ({type(exc).__name__}); остаётся прежний, если был")
+                warn(trl("обзор области {0} не построен ({1}); остаётся прежний, если был", domain, type(exc).__name__))
                 prev = store.cache_any(conn, "domain", domain)
                 if prev is not None:
                     results[domain] = prev
@@ -279,8 +280,8 @@ def user_name(conn: sqlite3.Connection, cfg: Config) -> str:
 
 
 def name_line(name: str) -> str:
-    return (f"Имя: {name}. Называй его так или «он»." if name else
-            "Имя: не задано. Не называй его по имени — пиши «он»; имена в утверждениях — это другие люди.")
+    return (trl("Имя: {0}. Называй его так или «он».", name) if name else
+            trl("Имя: не задано. Не называй его по имени — пиши «он»; имена в утверждениях — это другие люди."))
 
 
 def _leading_name(text: str) -> str:
@@ -308,12 +309,12 @@ def fix_portrait(conn: sqlite3.Connection, llm: Ollama, cfg: Config, portrait: s
     if past_verbs(portrait) < 2 and not wrong_name:
         return portrait
     past = past_claims(conn)
-    user = (name_line(name) + "\n\nПРОШЛОЕ (уже не так):\n" + ("\n".join(f"- {x}" for x in past) or "—")
-            + "\n\nПОРТРЕТ:\n" + portrait)
+    user = (name_line(name) + trl("\n\nПРОШЛОЕ (уже не так):\n") + ("\n".join(f"- {x}" for x in past) or "—")
+            + trl("\n\nПОРТРЕТ:\n") + portrait)
     try:
-        raw = _call(llm, cfg, PORTRAIT_FIX_SYSTEM, user, PORTRAIT_FIX_SCHEMA, "портрет")
+        raw = _call(llm, cfg, PORTRAIT_FIX_SYSTEM, user, PORTRAIT_FIX_SCHEMA, trl("портрет"))
     except OllamaError as exc:
-        warn(f"портрет не переписан ({type(exc).__name__})")
+        warn(trl("портрет не переписан ({0})", type(exc).__name__))
         return portrait
     new = str(raw.get("portrait") or "").strip()
     return new if portrait_ok(new, portrait, name, others | ({lead} if wrong_name else set())) else portrait
@@ -336,33 +337,32 @@ def build_profile(conn: sqlite3.Connection, llm: Ollama, cfg: Config,
         for p in d.get("key_points", [])[:6]:
             block.append(f"- {p['text']} [{', '.join(p['ids'])}]{time_note(conn, p['ids'])}")
         for g in d.get("goals", [])[:4]:
-            block.append(f"- цель ({STATUS_TITLES.get(g.get('status'), '')}): {g['text']} [{', '.join(g['ids'])}]"
-                         f"{time_note(conn, g['ids'])}")
+            block.append(trl("- цель ({0}): {1} [{2}]{3}", STATUS_TITLES.get(g.get('status'), ''), g['text'], ', '.join(g['ids']), time_note(conn, g['ids'])))
         for c in d.get("changes", [])[:2]:
-            block.append(f"- изменение: {c['text']} [{', '.join(c['ids'])}]")
+            block.append(trl("- изменение: {0} [{1}]", c['text'], ', '.join(c['ids'])))
         for p in d.get("patterns", [])[:2]:
-            block.append(f"- гипотеза: {p['hypothesis']} [за: {', '.join(p['for'])}; против: {', '.join(p['against']) or '—'}]")
+            block.append(trl("- гипотеза: {0} [за: {1}; против: {2}]", p['hypothesis'], ', '.join(p['for']), ', '.join(p['against']) or '—'))
         for t in d.get("tensions", [])[:2]:
-            block.append(f"- противоречие: {t['text']} [{', '.join(t['ids'])}]")
+            block.append(trl("- противоречие: {0} [{1}]", t['text'], ', '.join(t['ids'])))
         parts.append("\n".join(block))
     if not parts and not top:
         return None
-    body = ("ОБЗОРЫ ОБЛАСТЕЙ:\n\n" + "\n\n".join(parts)
-            + "\n\nСАМЫЕ ПОДТВЕРЖДЁННЫЕ УТВЕРЖДЕНИЯ ВСЕХ ОБЛАСТЕЙ:\n" + "\n".join(cluster_line(conn, r) for r in top))
+    body = (trl("ОБЗОРЫ ОБЛАСТЕЙ:\n\n") + "\n\n".join(parts)
+            + trl("\n\nСАМЫЕ ПОДТВЕРЖДЁННЫЕ УТВЕРЖДЕНИЯ ВСЕХ ОБЛАСТЕЙ:\n") + "\n".join(cluster_line(conn, r) for r in top))
     # Грубая защита контекста: ~3,5 символа на токен, оставляем место под ответ.
     max_chars = int((cfg.num_ctx - cfg.synth_predict - 1500) * 3.2)
     if len(body) > max_chars:
-        body = body[:max_chars] + "\n[вход сокращён]"
-    user = f"Сегодня: {iso_now()[:10]}. {name_line(user_name(conn, cfg))}\n\n" + body
+        body = body[:max_chars] + trl("\n[вход сокращён]")
+    user = trl("Сегодня: {0}. {1}\n\n", iso_now()[:10], name_line(user_name(conn, cfg))) + body
     fingerprint = digest([PROMPT_VERSION, cfg.synth_name, iso_now()[:7], user_name(conn, cfg), body])
     cached = store.cache_get(conn, "profile", "draft", fingerprint)
     if cached is not None:
         return cached
-    print("  Сборка опорного профиля", flush=True)
+    print(trl("  Сборка опорного профиля"), flush=True)
     try:
-        raw = _call(llm, cfg, PROFILE_SYSTEM, user, PROFILE_SCHEMA, "профиль")
+        raw = _call(llm, cfg, PROFILE_SYSTEM, user, PROFILE_SCHEMA, trl("профиль"))
     except OllamaError as exc:
-        warn(f"профиль не построен ({type(exc).__name__}); остаётся прежний")
+        warn(trl("профиль не построен ({0}); остаётся прежний", type(exc).__name__))
         return store.cache_any(conn, "profile", "draft")
     profile: dict[str, Any] = {"portrait": fix_portrait(conn, llm, cfg, str(raw.get("portrait") or "").strip())}
     for key in PROFILE_LISTS:
@@ -448,7 +448,7 @@ def _evidence(conn: sqlite3.Connection, ids: list[str], per_cluster: int = 2) ->
         if cid.startswith("H") and cid[1:].isdigit():
             h = conn.execute("SELECT hypothesis, evidence_quote FROM hypotheses_raw WHERE id=?", (int(cid[1:]),)).fetchone()
             if h:
-                lines.append(f"  {cid}: гипотеза из заметки — {h['hypothesis']} — цитата: «{h['evidence_quote'][:220]}»")
+                lines.append(trl("  {0}: гипотеза из заметки — {1} — цитата: «{2}»", cid, h['hypothesis'], h['evidence_quote'][:220]))
             continue
         if not cid.startswith("C") or not cid[1:].isdigit():
             continue
@@ -462,11 +462,11 @@ def _evidence(conn: sqlite3.Connection, ids: list[str], per_cluster: int = 2) ->
         if not meta:
             continue
         when = timeline.label(meta["currency"], meta["currency_src"], meta["valid_until"], meta["period"], meta["last_date"])
-        lines.append(f"  {cid}: заметок {meta['support_notes']}, даты {meta['first_date'] or '?'}…{meta['last_date'] or '?'}"
+        lines.append(trl("  {0}: заметок {1}, даты {2}…{3}", cid, meta['support_notes'], meta['first_date'] or '?', meta['last_date'] or '?')
                      + (f", {when}" if when else ""))
         for r in rows:
-            q = f" — цитата: «{r['evidence_quote'][:220]}»" if r["evidence_quote"] else (
-                " — сказано в разговоре" if r["origin"] == "chat" else " — без цитаты")
+            q = trl(" — цитата: «{0}»", r['evidence_quote'][:220]) if r["evidence_quote"] else (
+                trl(" — сказано в разговоре") if r["origin"] == "chat" else trl(" — без цитаты"))
             lines.append(f"    · {r['claim']} ({r['event_date'] or 'без даты'}){q}")
     return lines
 
@@ -500,15 +500,14 @@ def audit_profile(conn: sqlite3.Connection, llm: Ollama, cfg: Config, profile: d
             ids = it.get("ids") or it.get("for") or []
             block = f"P{i} [{key}]: {text}\n" + "\n".join(_evidence(conn, ids))
             if key == "portrait" and past:
-                block += ("\n  Уже в прошлом — если портрет описывает это как настоящее, это outdated: "
-                          "safer_text — тот же портрет в настоящем времени без этого (не переводи весь портрет "
-                          "в прошедшее время):\n" + "\n".join(f"    · {x}" for x in past))
+                block += (trl("\n"
+                              "  Уже в прошлом — если портрет описывает это как настоящее, это outdated: safer_text — тот же портрет в настоящем времени без этого (не переводи весь портрет в прошедшее время):\n") + "\n".join(f"    · {x}" for x in past))
             blocks.append(block)
-        print(f"  Аудит профиля: пункты {start + 1}–{start + len(chunk)} из {len(items)}", flush=True)
+        print(trl("  Аудит профиля: пункты {0}–{1} из {2}", start + 1, start + len(chunk), len(items)), flush=True)
         try:
-            raw = _call(llm, cfg, AUDIT_SYSTEM, "\n\n".join(blocks), AUDIT_SCHEMA, "аудит")
+            raw = _call(llm, cfg, AUDIT_SYSTEM, "\n\n".join(blocks), AUDIT_SCHEMA, trl("аудит"))
         except OllamaError as exc:
-            warn(f"аудит части профиля не выполнен ({type(exc).__name__}); эти пункты остаются непроверенными")
+            warn(trl("аудит части профиля не выполнен ({0}); эти пункты остаются непроверенными", type(exc).__name__))
             failed = True
             continue
         for v in raw.get("items") or []:
