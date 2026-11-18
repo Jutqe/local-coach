@@ -1030,5 +1030,7 @@
  "Правило длиннее {0} знаков, сократи его.": "The rule is longer than {0} characters, please shorten it.",
  "Такое правило уже есть.": "This rule already exists.",
  "Уже {0} правил, убери лишнее: /rule удалить N.": "There are already {0} rules, remove one: /rule delete N.",
- "Добавил правило {0}. Коуч учтёт его в разговоре (со следующей реплики).": "Added rule {0}. The coach will follow it in conversation (from the next message)."
+ "Добавил правило {0}. Коуч учтёт его в разговоре (со следующей реплики).": "Added rule {0}. The coach will follow it in conversation (from the next message).",
+ "Моделью называются все группы, включая одиночные упоминания: нужно {0} (уже названо раньше: {1}) – вызовов модели: {2}.": "The model names all groups, single mentions included: {0} needed (already named before: {1}) - model calls: {2}.",
+ "Одиночные упоминания (один факт, одна заметка): {0} – разбор пачкой списком (coach.py sweep); они из {1} заметок": "Single mentions (one fact, one note): {0} - reviewed in bulk as a list (coach.py sweep); they come from {1} notes"
 }

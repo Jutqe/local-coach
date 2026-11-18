@@ -70,6 +70,9 @@ def quiet():
 class LifeResetTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        # the commands run through cli.main build their own Config: describe the code-named single mentions here too
+        cls._env = mock.patch.dict(_os.environ, {"LOCAL_COACH_NAME_SINGLES": "0"})
+        cls._env.start()
         cls.server, cls.url = fake_ollama.start()
         cls.tmp = tempfile.TemporaryDirectory()
         root = Path(cls.tmp.name)
@@ -82,6 +85,7 @@ class LifeResetTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
+        cls._env.stop()
         cls.server.shutdown()
         cls.tmp.cleanup()
 
@@ -99,6 +103,7 @@ class LifeResetTest(unittest.TestCase):
     def cfg(self) -> Config:
         c = Config()
         c.workspace, c.vault, c.ollama = self.ws, self.vault, self.url
+        c.name_singles = False      # these tests describe the code-named single mentions; test_lr_naming covers the default
         return c
 
     def llm(self):

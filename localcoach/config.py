@@ -147,6 +147,9 @@ class Config:
     num_ctx: int = _env_int("LOCAL_COACH_NUM_CTX", 16384)
     keep_alive: str = _env("LOCAL_COACH_KEEP_ALIVE", "30m")
     think_extract: bool = _env("LOCAL_COACH_THINK_EXTRACT", "0") == "1"
+    # The model names every registry group, single mentions included (good titles, and it can merge duplicates).
+    # LOCAL_COACH_NAME_SINGLES=0 names single mentions by code only (about 70% fewer model calls).
+    name_singles: bool = field(default_factory=lambda: _env("LOCAL_COACH_NAME_SINGLES", "1") != "0")
     think_synth: bool = _env("LOCAL_COACH_THINK_SYNTH", "0") == "1"
     think_chat: bool = _env("LOCAL_COACH_THINK_CHAT", "0") == "1"
     chat_timing: bool = _env("LOCAL_COACH_CHAT_TIMING", "0") == "1"   # печатать время ответа в чате

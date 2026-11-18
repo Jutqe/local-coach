@@ -2,6 +2,9 @@
 
 Versions are those of the private development line this repository is generated from. Dates are 2026.
 
+## 5.12 (Nov 18)
+- Life Reset registry: the model now names every group, single mentions included (before, single mentions got a name made by code from the first words of the claim, such as "wants to learn Spanish properly this year"). The model also merges duplicates it sees in the same batch. `LOCAL_COACH_NAME_SINGLES=0` restores the old, cheaper behaviour (about 70% fewer model calls in a first build). Single mentions are still reviewed in bulk with `sweep`.
+
 ## 5.11 (Nov 18)
 - `/rule text`, `/rules`, `/rule delete N`: your own rules for the coach. Stored in `rules.md` in the working folder, added to the chat instructions (never above the safety rules), available in the terminal chat and the web chat. Nothing is trained: only the instructions change.
 - The English prompt version is now `4.10-en`: the profile prompts ask for "the author"/"they" with an example, because the 9B model wrote "he" for an author of unknown gender.

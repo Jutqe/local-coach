@@ -444,7 +444,7 @@ def cmd_inventory(cfg: Config, args: argparse.Namespace) -> int:
             inventory.print_list(conn, args.status)
             return 0
         if args.action == "plan":
-            inventory.print_plan(conn)
+            inventory.print_plan(conn, cfg.name_singles)
             return 0
         if args.action == "dedupe":
             n = inventory.dedupe(conn)

@@ -303,7 +303,8 @@ def build(conn: sqlite3.Connection, llm: Ollama, cfg: Config, quiet: bool = Fals
     named: dict[str, dict[str, Any]] = {}
     todo = []
     for g in gs:
-        if is_single(g):
+        single = is_single(g)
+        if single and not cfg.name_singles:
             # Одиночное упоминание: модели не нужно – факт и так самодостаточное предложение; такие
             # разбираются пачкой списком (sweep), а не карточкой каждое.
             named[g["key"]] = {**_fallback_name(g), "bulk": True}
@@ -311,7 +312,8 @@ def build(conn: sqlite3.Connection, llm: Ollama, cfg: Config, quiet: bool = Fals
             continue
         hit = store.cache_get(conn, "lr_group", g["fingerprint"], LR_VERSION)
         if hit is not None:
-            named[g["key"]] = hit
+            # "bulk" is set at use time, not cached: a group can stop being a single mention
+            named[g["key"]] = {**hit, "bulk": True} if single else hit
         else:
             todo.append(g)
     if todo:
@@ -329,7 +331,7 @@ def build(conn: sqlite3.Connection, llm: Ollama, cfg: Config, quiet: bool = Fals
                     # Модель пропустила группу в ответе: название кодом, чтобы не спрашивать её снова на каждом update.
                     res[g["key"]] = _fallback_name(g)
                 if g["key"] in res:
-                    named[g["key"]] = res[g["key"]]
+                    named[g["key"]] = {**res[g["key"]], "bulk": True} if is_single(g) else res[g["key"]]
                     store.cache_put(conn, "lr_group", g["fingerprint"], LR_VERSION, res[g["key"]])
                     stats["named"] += 1
             if len(batch) == BATCH:
@@ -1104,10 +1106,10 @@ def print_list(conn: sqlite3.Connection, status: str | None = None) -> None:
 
 # --- оценка до сборки ---------------------------------------------------------------------------
 
-def plan(conn: sqlite3.Connection) -> dict[str, Any]:
+def plan(conn: sqlite3.Connection, name_singles: bool = True) -> dict[str, Any]:
     """Сколько будет работы, без вызова модели. Только числа: их можно пересылать."""
     gs = groups(conn)
-    named = [g for g in gs if not is_single(g)]
+    named = list(gs) if name_singles else [g for g in gs if not is_single(g)]
     cached = sum(1 for g in named if store.cache_get(conn, "lr_group", g["fingerprint"], LR_VERSION) is not None)
     todo = len(named) - cached
     single = [g for g in gs if is_single(g)]
@@ -1127,16 +1129,21 @@ def plan(conn: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
-def print_plan(conn: sqlite3.Connection) -> None:
-    p = plan(conn)
+def print_plan(conn: sqlite3.Connection, name_singles: bool = True) -> None:
+    p = plan(conn, name_singles)
     print(trl("Групп-кандидатов в реестр: {0} (проектных заметок: {1}, тем из остальной памяти: {2}). Уже в реестре пунктов: {3}.", p['groups'], p['note_groups'], p['cluster_groups'], p['items']))
-    print(trl("Моделью называются темы и проектные заметки: нужно {0} (уже названо раньше: {1}) – вызовов модели: {2}.", p['todo'], p['cached'], p['calls']))
+    print(trl("Моделью называются все группы, включая одиночные упоминания: нужно {0} (уже названо раньше: {1}) – вызовов модели: {2}.", p['todo'], p['cached'], p['calls'])
+          if name_singles else
+          trl("Моделью называются темы и проектные заметки: нужно {0} (уже названо раньше: {1}) – вызовов модели: {2}.", p['todo'], p['cached'], p['calls']))
     if p["calls"]:
         if p["sec_per_batch"]:
             print(trl("Оценка по прошлой сборке: ~{0} ({1:.0f} с на вызов).", fmt_duration(p['calls'] * p['sec_per_batch']), p['sec_per_batch']))
         else:
             print(trl("Сколько займёт вызов, станет известно после первой сборки (ожидаю порядка минуты на вызов на видеокарте, на процессоре сервера – в несколько раз дольше; не замерено)."))
-    print(trl("Одиночные упоминания (один факт, одна заметка): {0} – без модели, разбор пачкой списком (coach.py sweep); они из {1} заметок", p['single'], p['single_notes']) + (trl(" и {0} из разговоров", p['single_chat']) if p["single_chat"] else "")
+    lead = (trl("Одиночные упоминания (один факт, одна заметка): {0} – разбор пачкой списком (coach.py sweep); они из {1} заметок", p['single'], p['single_notes'])
+            if name_singles else
+            trl("Одиночные упоминания (один факт, одна заметка): {0} – без модели, разбор пачкой списком (coach.py sweep); они из {1} заметок", p['single'], p['single_notes']))
+    print(lead + (trl(" и {0} из разговоров", p['single_chat']) if p["single_chat"] else "")
           + trl(". Старше 3 лет: {0}, старше 5 лет: {1}, без даты: {2}.", p['single_3y'], p['single_5y'], p['single_undated']))
     print(trl("Здесь только числа, без содержимого заметок – их можно переслать.\n"))
 
