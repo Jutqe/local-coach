@@ -81,7 +81,7 @@ class EnglishModeTest(unittest.TestCase):
             self.assertEnglish(out, " ".join(cmd))
 
     def test_03_chat_commands(self) -> None:
-        out = self.run_cli("chat", stdin="/reset\n/triage\n/bio\n/exit\n")
+        out = self.run_cli("chat", stdin="/reset\n/triage\n/bio\n/rule answer shorter\n/rules\n/rule delete 1\n/exit\n")
         self.assertEnglish(out, "chat")
         self.assertIn("Life Reset", out)
 

@@ -292,6 +292,17 @@ class WebTest(unittest.TestCase):
         _, data = self.call("GET", "/api/state")
         self.assertEqual(json.loads(data)["turns"], [])
 
+    def test_09a0_rule_command(self) -> None:
+        self.login()
+        try:
+            self.assertIn("Добавил правило 1", self.say(self.chat("/rule отвечай коротко")))
+            self.assertIn("1. отвечай коротко", self.say(self.chat("/rules")))
+            self.assertEqual((self.ws / "rules.md").read_text(encoding="utf-8"), "- отвечай коротко\n")
+            self.assertIn("Убрал правило", self.say(self.chat("/rule удалить 1")))
+            self.assertIn("пока нет", self.say(self.chat("/rules")))
+        finally:
+            (self.ws / "rules.md").unlink(missing_ok=True)
+
     def test_09a_language_button(self) -> None:
         from localcoach import i18n
         res, _ = self.call("POST", "/api/lang", {"lang": "en"}, cookie=False)

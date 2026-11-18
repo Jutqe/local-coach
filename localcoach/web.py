@@ -27,7 +27,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from typing import Any, Callable
 
-from . import bodydouble, commitments, guard, i18n, inventory, lifereset, people, store, triageweb, webi18n
+from . import bodydouble, commitments, guard, i18n, inventory, lifereset, people, rules, store, triageweb, webi18n
 from . import history as chronology
 from .chat import Coach, _REMEMBER, pending_count, remember_text
 from .config import Config
@@ -70,6 +70,7 @@ HELP = (trl("Здесь работает разговор и режим прис
             "/focus задача — режим присутствия (стоп — «стоп» или /focus); можно с пунктом и планом: /focus LR-12 на 50 минут\n"
             "/bio [год] — хронология из базы\n"
             "/sources — откуда ответ\n"
+            "/rule текст — своё правило для коуча (/rules — список, /rule удалить N — убрать)\n"
             "/new — новая сессия (итог сохранится)\n"
             "Life Reset: /reset – обзор программы, /triage [область] – разбор реестра, /idea текст – записать идею в реестр, /depth 1|2|3 – глубина разговора\n"
             "Разбор предложений в память, калибровка, люди, договорённости, импорт, а также аудит, гипотезы и разбор пачкой (sweep) Life Reset — пока в терминале."))
@@ -393,6 +394,9 @@ class WebCoach:
                 return
             iid = inventory.capture(c.conn, c.llm, arg, check_dup=False) if arg else None
             out({"ev": "system", "t": trl("Записал в реестр как {0} – «не разобрано». Решение – при разборе (python3 coach.py triage).", inventory.code(iid)) if iid else trl("Напиши идею после команды: /idea текст")})
+            return
+        if head in ("/rule", "/rules", "/правило", "/правила"):
+            out({"ev": "system", "t": rules.handle(c.cfg.workspace, arg)})
             return
         if head in ("/depth", "/глубина"):
             if arg.isdigit() and lifereset.set_depth(c.conn, int(arg)):

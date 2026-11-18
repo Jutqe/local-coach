@@ -2,6 +2,10 @@
 
 Versions are those of the private development line this repository is generated from. Dates are 2026.
 
+## 5.11 (Nov 18)
+- `/rule text`, `/rules`, `/rule delete N`: your own rules for the coach. Stored in `rules.md` in the working folder, added to the chat instructions (never above the safety rules), available in the terminal chat and the web chat. Nothing is trained: only the instructions change.
+- The English prompt version is now `4.10-en`: the profile prompts ask for "the author"/"they" with an example, because the 9B model wrote "he" for an author of unknown gender.
+
 ## 5.10 (Nov 18)
 - Language button in the web settings: pick Russian or English, the choice is saved in the working folder (`lang`), the service restarts itself under systemd and the page reloads in the new language. `LOCAL_COACH_LANG`, when set, still wins and locks the button. Memory that was built in the other language stays as it was until `reextract`.
 - English profile headings and gender-neutral wording in the English profile prompts (found in a real run on an invented English vault: 42 facts, 40 verbatim quotes, dates such as "last week" resolved correctly).

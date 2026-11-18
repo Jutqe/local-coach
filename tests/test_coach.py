@@ -190,6 +190,20 @@ class CoachTest(unittest.TestCase):
         self.assertEqual(store.scalar(conn, "SELECT COUNT(*) FROM sessions WHERE summary!=''"), 2)
         conn.close()
 
+    def test_09aa_own_rules_reach_the_prompt(self) -> None:
+        fake_ollama.LAST_CHAT.clear()
+        try:
+            with answers("/rule отвечай короче", "/rules", "Привет", "/rule удалить 1", "Ещё раз привет", "/exit"):
+                out = self.run_cli("chat")
+            self.assertIn("Добавил правило 1", out)
+            self.assertIn("1. отвечай короче", out)
+            self.assertIn("RULES FROM THE PERSON", fake_ollama.LAST_CHAT[0])
+            self.assertIn("- отвечай короче", fake_ollama.LAST_CHAT[0])
+            self.assertIn("Убрал правило", out)
+            self.assertNotIn("RULES FROM THE PERSON", fake_ollama.LAST_CHAT[-1], "removed rule leaves the prompt")
+        finally:
+            (self.ws / "rules.md").unlink(missing_ok=True)
+
     def test_09a_chat_about_coach(self) -> None:
         fake_ollama.LAST_CHAT.clear()
         fake_ollama.LAST_USER.clear()

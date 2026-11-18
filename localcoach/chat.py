@@ -9,7 +9,7 @@ import threading
 import time
 from typing import Any, Callable
 
-from . import audit, bodydouble, checkin, commitments, guard, hypotheses, inventory, lifereset, people, store, timeline, vectors
+from . import audit, bodydouble, checkin, commitments, guard, hypotheses, inventory, lifereset, people, rules, store, timeline, vectors
 from . import history as chronology
 from .config import Config, DOMAIN_TITLES, KIND_TITLES
 from .ollama import Ollama, OllamaError, embed_doc_text
@@ -48,6 +48,7 @@ HELP = trl("Команды:\n"
            "  /hypotheses — проверить гипотезы о повторяющихся сценариях\n"
            "  /idea     — записать новую идею в реестр, не делая её сразу проектом (/idea текст)\n"
            "  /depth    — глубина разговора: 1 практическая, 2 аналитическая, 3 глубокая рефлексия (/depth 3)\n"
+           "  /rule     — свои правила для коуча (/rule отвечай короче; /rules — список; /rule удалить 1)\n"
            "  /bio      — хронология жизни по годам из базы, без модели (/bio 1988-2026; --all — всё подряд; /history — то же;\n"
            "              или «выведи всё из базы по годам»)\n"
            "  /sources  — откуда взята память для последнего ответа\n"
@@ -228,7 +229,8 @@ class Coach:
 
     def messages(self, user_text: str, reminder: str = COACH_REMINDER) -> list[dict[str, str]]:
         cfg = self.cfg
-        system = (COACH_SYSTEM + f"\n\nСегодня: {today()}.\n\nОПОРНЫЙ ПРОФИЛЬ (черновик из заметок, может ошибаться):\n"
+        rules_text = rules.block(cfg.workspace)
+        system = (COACH_SYSTEM + ("\n\n" + rules_text if rules_text else "") + f"\n\nСегодня: {today()}.\n\nОПОРНЫЙ ПРОФИЛЬ (черновик из заметок, может ошибаться):\n"
                   + profile_block(self.profile))
         now_block = checkin.coach_block(self.conn)
         if now_block:
@@ -688,6 +690,9 @@ def chat_loop(cfg: Config, llm: Ollama) -> int:
                 print(trl("Такая уже есть: {0}.\n", inventory.code(same)) if same else
                       trl("Записал в реестр как {0} – «не разобрано». Решение – при разборе (/triage).\n", inventory.code(iid))
                       if iid else trl("Не записал.\n"))
+                continue
+            if head in ("/rule", "/rules", "/правило", "/правила"):
+                print(rules.handle(cfg.workspace, cmd[1] if len(cmd) > 1 else "") + "\n")
                 continue
             if head in ("/depth", "/глубина"):
                 arg = cmd[1].strip() if len(cmd) > 1 else ""
