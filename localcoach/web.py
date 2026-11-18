@@ -27,7 +27,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from typing import Any, Callable
 
-from . import bodydouble, commitments, guard, inventory, lifereset, people, store, triageweb, webi18n
+from . import bodydouble, commitments, guard, i18n, inventory, lifereset, people, store, triageweb, webi18n
 from . import history as chronology
 from .chat import Coach, _REMEMBER, pending_count, remember_text
 from .config import Config
@@ -37,6 +37,15 @@ from .i18n import trl
 
 PAGE = Path(__file__).resolve().parent / "web" / "index.html"
 _PAGE_CACHE: list[bytes] = []
+
+
+def _restart_soon() -> bool:
+    """After the language is saved: under systemd (INVOCATION_ID is set) stop the process gracefully, Restart=always
+    brings it back with the new language. Elsewhere there is nobody to restart it: return False, the page says so."""
+    if not os.environ.get("INVOCATION_ID"):
+        return False
+    threading.Timer(1.0, os.kill, (os.getpid(), signal.SIGTERM)).start()
+    return True
 
 
 def _page_bytes() -> bytes:
@@ -193,6 +202,7 @@ class WebCoach:
                        "seconds": self.focus.elapsed_sec(), "planned": self.focus.planned,
                        "item": self.focus.item_id} if self.focus else None),
             "lr_active": self._lr_active(), "lr_wait": triageweb.waiting(c.conn),
+            "lang": i18n.LANG, "lang_locked": i18n.locked(),
             "last_session": ({"date": last["started_at"][:10], "title": last["title"] or ""} if last else None),
             "pending": pending_count(c.conn), "agreements": len(deals),
             "late": sum(1 for d in deals if d["due"] and d["due"] < today()),
@@ -434,6 +444,7 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "LocalCoachWeb"
     wc: WebCoach
     auth: Auth
+    restart = staticmethod(_restart_soon)     # replaced in tests
 
     def log_message(self, *args: Any) -> None:    # без журнала запросов: ни путей, ни текстов
         pass
@@ -553,6 +564,20 @@ class Handler(BaseHTTPRequestHandler):
             self.auth.set_pin(new)
             cookie = f"{COOKIE}={self.auth.token()}; Path=/; HttpOnly; SameSite=Strict; Max-Age={COOKIE_DAYS * 86400}"
             self._json(200, {"ok": True}, {"Set-Cookie": cookie})
+            return
+        if path == "/api/lang":
+            if not self._authed():
+                self._json(401, {"error": "auth"})
+                return
+            code = str(body.get("lang", "")).strip().lower()
+            if code not in i18n.LANGS:
+                self._json(400, {"error": "lang"})
+                return
+            if i18n.locked():
+                self._json(409, {"error": "locked"})      # LOCAL_COACH_LANG is set: the environment wins
+                return
+            i18n.save_lang(self.wc.cfg.workspace, code)
+            self._json(200, {"ok": True, "lang": code, "restart": bool(code != i18n.LANG and self.restart())})
             return
         if path == "/api/logout":
             self._json(200, {"ok": True}, {"Set-Cookie": f"{COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"})

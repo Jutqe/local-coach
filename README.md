@@ -60,6 +60,15 @@ Instead of `--vault` you can set `LOCAL_COACH_VAULT` once (the Russian guide doe
 
 Configuration is done through environment variables, for example `LOCAL_COACH_VAULT`, `LOCAL_COACH_OLLAMA`, `LOCAL_COACH_MODEL` and `LOCAL_COACH_LANG` (`en` or `ru`; the language is chosen at startup, and after changing it for an existing working folder run `python3 coach.py reextract` so the memory is rebuilt in the new language). See [README.ru.md](README.ru.md#настройки-переменные-окружения) for the full list.
 
+## Tuning the coach
+
+The coach is **not fine-tuned**: the weights of the model are never changed, and nothing you say retrains it. Its behaviour comes from four things, and you can change all of them:
+
+- **Memory.** Tell it in chat: `/remember ...` (or "remember that ..."), "correct that ..." to change a remembered fact, `/forget ...` to remove one. `/review`, `/calibrate`, `/checkin` and `/people` let you confirm or correct what it learned from your notes. What it remembers shapes its answers.
+- **Depth and reasoning.** `/depth 1|2|3` (practical, analytical, deep reflection) and `/think` (reasoning on or off for the conversation).
+- **Instructions.** All instructions to the model are plain text in the repository: `localcoach/prompts_en.py` (English) and `localcoach/prompts.py` (Russian). The coach persona is `COACH_SYSTEM`; fact extraction, the profile, the registry and the other tasks have their own prompts. Edit them, restart the coach, and after changing an extraction prompt run `python3 coach.py reextract`. The prompts also carry the safety rules (no diagnoses, no invented facts, careful hypotheses), so keep those when you edit. You cannot yet change the instructions from inside the chat; that is a possible future feature.
+- **Models and language.** `LOCAL_COACH_MODEL`, `LOCAL_COACH_HEAVY_MODEL`, `LOCAL_COACH_EMBED_MODEL`, `LOCAL_COACH_LANG` (and the language switch in the web settings). Any model that Ollama serves with structured output should work (see "Other models" above).
+
 ## Tests
 
 ```bash

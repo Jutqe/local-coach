@@ -85,10 +85,10 @@ def plain_profile(profile: dict[str, Any] | None) -> str:
     lines = [trl("# Профиль"), ""]
     if profile.get("portrait"):
         lines += [profile["portrait"].strip(), ""]
-    for title, key in (("Устойчивое", "core_facts"), ("Сейчас в фокусе", "current_focus"), ("Цели", "goals"),
-                       ("Ценности", "values"), ("Ресурсы и сильные стороны", "strengths"),
-                       ("Противоречия", "tensions"), ("Прошлое", "history"),
-                       ("Не проверено, актуально ли сейчас", "unverified")):
+    for title, key in ((trl("Устойчивое"), "core_facts"), (trl("Сейчас в фокусе"), "current_focus"), (trl("Цели"), "goals"),
+                       (trl("Ценности"), "values"), (trl("Ресурсы и сильные стороны"), "strengths"),
+                       (trl("Противоречия"), "tensions"), (trl("Прошлое"), "history"),
+                       (trl("Не проверено, актуально ли сейчас"), "unverified")):
         lines += _plain(title, profile.get(key, []))
     if profile.get("patterns"):
         lines += [trl("## Гипотезы"), "", trl("> Догадки модели, а не факты."), ""]

@@ -55,7 +55,9 @@
   "светлая": "light",
   "серый табби": "grey tabby",
   "тёмная": "dark",
-  "чёрный": "black"
+  "чёрный": "black",
+  "Язык": "Language",
+  "Язык задан переменной LOCAL_COACH_LANG и здесь не меняется.": "The language is set by the LOCAL_COACH_LANG variable and cannot be changed here."
  },
  "attr": {
   "PIN-код": "PIN code",
@@ -85,7 +87,8 @@
   "Рассуждение: ответы дольше, но вдумчивее": "Reasoning: answers take longer but are more thoughtful",
   "Режим присутствия: Базилий сидит рядом, пока ты работаешь": "Presence mode: Basil sits next to you while you work",
   "Текущий PIN": "Current PIN",
-  "пусто – поле без подсказки": "empty - field without a hint"
+  "пусто – поле без подсказки": "empty - field without a hint",
+  "Язык интерфейса и коуча": "Interface and coach language"
  },
  "js": {
   " (в терминале: /review).": " (in the terminal: /review).",
@@ -298,6 +301,9 @@
   "по умолчанию": "default",
   "полгода": "half a year",
   "разобрано сейчас: ": "reviewed now: ",
-  "сейчас: ": "now: "
+  "сейчас: ": "now: ",
+  "Сменить язык? Интерфейс, ответы коуча и инструкции модели переключатся, а служба перезапустится (несколько секунд). Уже собранная память останется на прежнем языке, пока не выполнишь python3 coach.py reextract.": "Change the language? The interface, the coach replies and the model instructions will switch, and the service will restart (a few seconds). Memory that is already built stays in the previous language until you run python3 coach.py reextract.",
+  "Не получилось сменить язык.": "Could not change the language.",
+  "Язык сохранён. Перезапусти коуч (systemctl restart local-coach-web), чтобы он применился.": "Language saved. Restart the coach (systemctl restart local-coach-web) to apply it."
  }
 }

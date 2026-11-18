@@ -481,6 +481,11 @@
       </div>
       <div class="label" id="pinLabel">Доступ</div>
       <div class="row" id="pinRow"><button id="bPin" type="button">Сменить PIN</button></div>
+      <div class="label" id="langLabel">Язык</div>
+      <div class="row" id="langRow">
+        <select id="langSel" aria-label="Язык интерфейса и коуча"><option value="ru">&#1056;&#1091;&#1089;&#1089;&#1082;&#1080;&#1081;</option><option value="en">English</option></select>
+        <span class="label" id="langNote" hidden>Язык задан переменной LOCAL_COACH_LANG и здесь не меняется.</span>
+      </div>
       <div class="label">Тема</div>
       <div class="row" id="themes">
         <button data-t="light">светлая</button>
@@ -677,6 +682,23 @@ function openPin(forced) {
   document.getElementById(pinOld.hidden ? 'pinNew' : 'pinOld').focus();
 }
 document.getElementById('bPin').onclick = () => openPin(false);
+// Language: saved in the working folder, the service restarts itself (systemd) and the page reloads in the new language.
+const langSel = document.getElementById('langSel'), langNote = document.getElementById('langNote');
+let curLang = 'ru';
+langSel.onchange = async () => {
+  const to = langSel.value;
+  if (!confirm('Сменить язык? Интерфейс, ответы коуча и инструкции модели переключатся, а служба перезапустится (несколько секунд). Уже собранная память останется на прежнем языке, пока не выполнишь python3 coach.py reextract.')) { langSel.value = curLang; return; }
+  const r = await post('/api/lang', { lang: to });
+  if (!r.ok) { langSel.value = curLang; alert('Не получилось сменить язык.'); return; }
+  const d = await r.json();
+  if (!d.restart) { alert('Язык сохранён. Перезапусти коуч (systemctl restart local-coach-web), чтобы он применился.'); return; }
+  langSel.disabled = true;
+  for (let i = 0; i < 90; i++) {
+    await new Promise(res => setTimeout(res, 2000));
+    try { const s = await (await fetch('/api/state')).json(); if (s.lang === to || s.auth === false) { location.reload(); return; } } catch (e) {}
+  }
+  location.reload();
+};
 document.getElementById('pinCancel').onclick = () => { if (!pinForced) setpin.hidden = true; };
 document.getElementById('pinForm').onsubmit = async e => {
   e.preventDefault();
@@ -692,6 +714,7 @@ document.getElementById('pinForm').onsubmit = async e => {
 
 let lrActive = [];
 function applyState(s) {
+  curLang = s.lang || 'ru'; langSel.value = curLang; langSel.disabled = !!s.lang_locked; langNote.hidden = !s.lang_locked;
   lrActive = s.lr_active || [];
   document.getElementById('triRow').hidden = !s.lr_wait;
   document.getElementById('bTri').textContent = 'Разбор: ждут ' + (s.lr_wait || 0);

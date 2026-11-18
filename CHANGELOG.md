@@ -2,6 +2,11 @@
 
 Versions are those of the private development line this repository is generated from. Dates are 2026.
 
+## 5.10 (Nov 18)
+- Language button in the web settings: pick Russian or English, the choice is saved in the working folder (`lang`), the service restarts itself under systemd and the page reloads in the new language. `LOCAL_COACH_LANG`, when set, still wins and locks the button. Memory that was built in the other language stays as it was until `reextract`.
+- English profile headings and gender-neutral wording in the English profile prompts (found in a real run on an invented English vault: 42 facts, 40 verbatim quotes, dates such as "last week" resolved correctly).
+- README: "Tuning the coach" (what can and cannot be changed, no fine-tuning of weights) and "Other models".
+
 ## 5.9 (Nov 18)
 - **English.** The whole tool now works in English: the prompts for the model, the terminal commands and messages, the reports, the web page (served with substituted strings) and the typed answers. `LOCAL_COACH_LANG=en|ru` chooses the language at startup (English is the default in this repository, Russian in the personal line it is generated from). Typed input accepts both languages in either mode: answer letters (a/i/s/w/h/d/l/x/u/n for registry items, c/p/u/n/s/q in the calibration dialogs, y/n/e/q for suggestions), yes/no/stop words, memory commands ("remember that ..."), body-double phrases ("for 50 minutes", "stay with me"), English dates ("May 1st, 2015") and review intervals ("in 3 months").
 - The translation (about 1000 interface strings, 295 web strings and the prompt set) was produced with a language model and checked by scripts, not by a native speaker. Known limits in English: the biography table parser and the "present tense" portrait fixer still expect Russian text, and answer quality with the English prompts has not been measured.

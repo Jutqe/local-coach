@@ -94,6 +94,18 @@ class EnglishModeTest(unittest.TestCase):
                            (("--help",), "")):
             self.assertEnglish(self.run_cli(*cmd, stdin=stdin), " ".join(cmd))
 
+    def test_03c_generated_profile_is_english(self) -> None:
+        # generated files are not in the command output: render the plain profile directly
+        code = ("from localcoach import report\n"
+                "p = {'portrait': 'Portrait.'}\n"
+                "for k in ('core_facts', 'current_focus', 'goals', 'values', 'strengths', 'tensions', 'history', 'unverified'):\n"
+                "    p[k] = [{'text': k}]\n"
+                "print(report.plain_profile(p))\n")
+        res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=self.env, cwd=str(CODE), timeout=60)
+        self.assertEqual(res.returncode, 0, res.stderr[-1500:])
+        self.assertEnglish(res.stdout, "plain profile")
+        self.assertIn("## Goals", res.stdout)
+
     def test_04_catalog_is_complete(self) -> None:
         code = ("import importlib, pkgutil, localcoach\n"
                 "for m in pkgutil.iter_modules(localcoach.__path__):\n    importlib.import_module('localcoach.' + m.name)\n"

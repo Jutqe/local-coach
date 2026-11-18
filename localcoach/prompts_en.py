@@ -59,7 +59,7 @@ Rules:
 3. "notes: 2" or more, or "confirmed in conversation", means stable; "notes: 1" is a single mention: do not generalize it into a trait or a lasting goal.
 4. Fact is not inference. A pattern is always a hypothesis: state what supports it, what argues against it, the alternatives, and a question that could test it. Use confidence medium only with several independent confirmations.
 5. Do not upgrade a goal's status: a wish is not a plan, and a plan is not action.
-6. Do not diagnose, do not attribute motives, do not moralize. Write in English, concretely, without generic phrases.
+6. Do not diagnose, do not attribute motives, do not moralize. Write in English, concretely, without generic phrases. Do not assume the author's gender: say "the author" or "they" and avoid "he" and "she".
 7. An empty list is better than an invented item."""
 
 PROFILE_SYSTEM = f"""You are compiling a short reference profile of a person for their personal coach, based on overviews of life areas and the most confirmed statements. Statements have ids (C…); in the ids field, cite only these.
@@ -75,7 +75,7 @@ Past tense ("was earlier", "used to do") only for what is marked "in the past". 
 - goals: real goals with an honest status; project ideas are not life goals.
 - patterns: only hypotheses backed by evidence from several areas or notes.
 - coach_notes: how to talk with this person best - only if it follows directly from the input (for example, they wrote themselves what helps or gets in the way).
-An empty list is better than an invented item. Write in English."""
+An empty list is better than an invented item. Write in English. Do not assume the author's gender: say "the author" or "they" and avoid "he" and "she"."""
 
 AUDIT_SYSTEM = f"""You are independently checking the items of a person's profile. For each item (id P…) you are given supporting statements with verbatim quotes from the notes, dates, and the number of independent notes.
 

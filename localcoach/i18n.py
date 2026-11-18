@@ -1,6 +1,7 @@
 """Язык коуча: один код, язык задаёт переменная LOCAL_COACH_LANG (ru или en).
 
-- `LANG` – язык процесса; выбирается один раз при запуске (смена языка = перезапуск).
+- `LANG` – язык процесса; выбирается один раз при запуске (смена языка = перезапуск): переменная LOCAL_COACH_LANG,
+  иначе файл `lang` в рабочей папке (его пишет кнопка в веб-настройках), иначе DEFAULT_LANG.
 - `trl("русская строка", *args)` – текст интерфейса и сообщений. Русская строка остаётся ключом: на ru она
   возвращается как есть, на en берётся перевод из `locales/en.json`. Параметры подставляются через `str.format`
   только если они переданы, так что фигурные скобки в обычных строках безопасны.
@@ -22,8 +23,46 @@ DEFAULT_LANG = "en"
 CATALOG_DIR = Path(__file__).resolve().parent / "locales"
 
 
+LANG_FILE = "lang"
+
+
+def _workspace() -> Path:
+    """Working folder as Config will see it: --workspace argument, else the default (see defaults.py)."""
+    argv = sys.argv
+    for i, arg in enumerate(argv):
+        if arg == "--workspace" and i + 1 < len(argv):
+            return Path(argv[i + 1]).expanduser()
+        if arg.startswith("--workspace="):
+            return Path(arg.split("=", 1)[1]).expanduser()
+    from .defaults import DEFAULT_WORKSPACE
+    return DEFAULT_WORKSPACE
+
+
+def saved_lang(workspace: Path | None = None) -> str:
+    """Language saved by the web button in the working folder ('' if none)."""
+    try:
+        return ((workspace or _workspace()) / LANG_FILE).read_text(encoding="utf-8").strip().lower()
+    except OSError:
+        return ""
+
+
+def locked() -> bool:
+    """True when LOCAL_COACH_LANG is set: the environment wins over the saved choice, the button must not offer a change."""
+    return bool(os.environ.get("LOCAL_COACH_LANG"))
+
+
+def save_lang(workspace: Path, code: str) -> None:
+    """Remember the language for the next start (atomic write)."""
+    if code not in LANGS:
+        raise ValueError(code)
+    workspace.mkdir(parents=True, exist_ok=True)
+    tmp = workspace / (LANG_FILE + ".tmp")
+    tmp.write_text(code + "\n", encoding="utf-8")
+    tmp.replace(workspace / LANG_FILE)
+
+
 def _pick() -> str:
-    raw = (os.environ.get("LOCAL_COACH_LANG") or DEFAULT_LANG).strip().lower()
+    raw = (os.environ.get("LOCAL_COACH_LANG") or saved_lang() or DEFAULT_LANG).strip().lower()
     if raw in LANGS:
         return raw
     print(f"LOCAL_COACH_LANG={raw!r} не поддерживается (есть: {', '.join(LANGS)}), беру {DEFAULT_LANG}.", file=sys.stderr)

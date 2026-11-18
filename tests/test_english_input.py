@@ -98,6 +98,31 @@ class EnglishInputTest(unittest.TestCase):
         self.assertTrue(history.ASK.search("show me everything by years"))
         self.assertFalse(history.ASK.search("show my plans for the week"))
 
+    def test_language_choice_at_startup(self) -> None:
+        # env wins over the file in the working folder, the file wins over the default; checked in subprocesses
+        import os
+        import subprocess
+        import tempfile
+        code = "import sys; sys.path.insert(0, '.'); from localcoach import i18n; print(i18n.LANG)"
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as ws:
+            def lang(env_lang: str | None, file_lang: str | None) -> str:
+                env = {k: v for k, v in os.environ.items() if k != "LOCAL_COACH_LANG"}
+                if env_lang:
+                    env["LOCAL_COACH_LANG"] = env_lang
+                (Path(ws) / "lang").unlink(missing_ok=True)
+                if file_lang in i18n.LANGS:
+                    i18n.save_lang(Path(ws), file_lang)
+                elif file_lang:
+                    (Path(ws) / "lang").write_text(file_lang, encoding="utf-8")
+                res = subprocess.run([sys.executable, "-c", code, "--workspace", ws], capture_output=True, text=True,
+                                     cwd=str(root), env=env, timeout=30)
+                return res.stdout.strip()
+            self.assertEqual(lang(None, "en"), "en", "saved by the web button")
+            self.assertEqual(lang("ru", "en"), "ru", "the environment variable wins")
+            self.assertEqual(lang(None, None), i18n.DEFAULT_LANG)
+            self.assertEqual(lang(None, "xx"), i18n.DEFAULT_LANG, "unknown value falls back")
+
     def test_english_plurals(self) -> None:
         # английская схема склонений включается только в английском режиме; в русском работает прежняя
         from localcoach import timeline

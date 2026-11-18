@@ -25,9 +25,7 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-DEFAULT_VAULT_CANDIDATES: tuple[Path, ...] = ()
-# База, память и импорт — вне vault: заметки только читаются.
-DEFAULT_WORKSPACE = Path(os.environ.get("LOCAL_COACH_WORKSPACE", "~/.local-coach")).expanduser()
+from .defaults import DEFAULT_VAULT_CANDIDATES, DEFAULT_WORKSPACE  # noqa: F401  (re-exported)
 
 EXCLUDED_DIRS = {
     ".obsidian", ".trash", ".git", "node_modules", ".cache",

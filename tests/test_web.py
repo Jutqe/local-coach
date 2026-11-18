@@ -19,6 +19,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -290,6 +291,35 @@ class WebTest(unittest.TestCase):
         self.assertIn("reset", [e["ev"] for e in events])
         _, data = self.call("GET", "/api/state")
         self.assertEqual(json.loads(data)["turns"], [])
+
+    def test_09a_language_button(self) -> None:
+        from localcoach import i18n
+        res, _ = self.call("POST", "/api/lang", {"lang": "en"}, cookie=False)
+        self.assertEqual(res.status, 401, "language change needs a login")
+        self.login()
+        # the test process pins the language through the environment variable, which counts as "locked":
+        # pretend it is not, as in a normal service run
+        unlocked = mock.patch.object(i18n, "locked", return_value=False)
+        unlocked.start()
+        self.addCleanup(unlocked.stop)
+        state = json.loads(self.call("GET", "/api/state")[1])
+        self.assertEqual((state["lang"], state["lang_locked"]), ("ru", False))
+        self.assertEqual(self.call("POST", "/api/lang", {"lang": "de"})[0].status, 400)
+        restarts: list[int] = []
+        web.Handler.restart = staticmethod(lambda: restarts.append(1) or True)
+        try:
+            res, data = self.call("POST", "/api/lang", {"lang": "en"})
+            self.assertEqual((res.status, json.loads(data)), (200, {"ok": True, "lang": "en", "restart": True}))
+            self.assertEqual((self.ws / "lang").read_text(encoding="utf-8").strip(), "en")
+            self.assertEqual(len(restarts), 1)
+            res, data = self.call("POST", "/api/lang", {"lang": "ru"})       # the process language is ru: nothing to restart
+            self.assertEqual(json.loads(data)["restart"], False)
+            self.assertEqual(len(restarts), 1)
+            with mock.patch.object(i18n, "locked", return_value=True):
+                self.assertEqual(self.call("POST", "/api/lang", {"lang": "en"})[0].status, 409, "the environment variable wins")
+        finally:
+            web.Handler.restart = staticmethod(web._restart_soon)
+            (self.ws / "lang").unlink(missing_ok=True)
 
     def test_09b_audio_files(self) -> None:
         if not (web.AUDIO / "stream.wav").is_file():
