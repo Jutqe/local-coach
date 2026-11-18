@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+# записи для фоновых звуков: двоичные файлы со своими лицензиями, в историю не кладём
+localcoach/web/audio/*.wav
+localcoach/web/audio/*.mp3
+localcoach/web/audio/*.ogg
